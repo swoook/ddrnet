@@ -63,10 +63,9 @@ def main():
 
     # build model
     if torch.__version__.startswith('1'):
-        module = eval('models.'+config.MODEL.NAME)
+        module = models.__dict__[config.MODEL.NAME]
         module.BatchNorm2d_class = module.BatchNorm2d = torch.nn.BatchNorm2d
-    model = eval('models.'+config.MODEL.NAME +
-                 '.get_seg_model')(config)
+    model = models.__dict__[config.MODEL.NAME].__dict__['get_seg_model'](config)
 
     dump_input = torch.rand(
         (1, 3, config.TRAIN.IMAGE_SIZE[1], config.TRAIN.IMAGE_SIZE[0])
@@ -97,7 +96,7 @@ def main():
 
     # prepare data
     test_size = (config.TEST.IMAGE_SIZE[1], config.TEST.IMAGE_SIZE[0])
-    test_dataset = eval('datasets.'+config.DATASET.DATASET)(
+    test_dataset = datasets.__dict__[config.DATASET.DATASET](
                         root=config.DATASET.ROOT,
                         list_path=config.DATASET.TEST_SET,
                         num_samples=None,
