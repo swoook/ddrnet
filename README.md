@@ -1,3 +1,7 @@
+# ❗ This is cloned repository!
+
+This repository is cloned from [chenjun2hao/DDRNet.pytorch](https://github.com/chenjun2hao/DDRNet.pytorch) and modified for research
+
 # Deep Dual-resolution Networks for Real-time and Accurate Semantic Segmentation of Road Scenes
 
 ## Introduction
@@ -14,47 +18,95 @@ The code mainly borrows from [HRNet-Semantic-Segmentation OCR](https://github.co
   </center>
 </figcaption>
 </figure>
+<sup>A  comparison  of  speed-accuracy  trade-off  on  Cityscapes  test  set.</sup>
 
-## requirements
-Here I list the software and hardware used in my experiment
-- pytorch==1.7.0
-- 3080*2
-- cuda==11.1
+## Requirements
 
-## Quick start
-
-### 0. Data preparation
-
-You need to download the [Cityscapes](https://www.cityscapes-dataset.com/)datasets. and rename the folder `cityscapes`, then put the data under `data` folder. 
 ```
-└── data
-  ├── cityscapes
-  └── list
+torch>=1.7.0
+cudatoolkit>=10.2
 ```
 
-### 1. Pretrained model
+## Cityscapes Data Preparation
 
-download the pretrained model on imagenet or the segmentation model from the [official](https://github.com/ydhongHIT/DDRNet)，and put the files in `${PROJECT}/pretrained_models` folder
+1. Download two files below from [Cityscapes](https://www.cityscapes-dataset.com/).to the *\${CITYSCAPES_ROOT}*
+
+   * *leftImg8bit_trainvaltest.zip*
+   * *gtFine_trainvaltest.zip*
+
+2. Unzip them
+
+3. Rename the folders like below
+
+   ```
+   └── cityscapes
+     ├── leftImg8bit
+         ├── test
+         ├── train
+         └── val
+     └── gtFine
+         ├── test
+         ├── train
+         └── val
+   ```
+
+4. Update some properties in *{REPO_ROOT}/experiments/cityscapes/${MODEL_YAML}* like below
+
+   ```yaml
+   DATASET:
+     DATASET: cityscapes
+     ROOT: ${CITYSCAPES_ROOT}
+     TEST_SET: 'cityscapes/list/test.lst'
+     TRAIN_SET: 'cityscapes/list/train.lst'
+     ...
+   ```
+
+## Pretrained Models
+
+* [The official repository](https://github.com/ydhongHIT/DDRNet) provides pretrained models for *Cityscapes* 
+
+1. Download the pretrained model to *\${MODEL_DIR}*
+
+2. Update `MODEL.PRETRAINED` and `TEST.MODEL_FILE` in *{REPO_ROOT}/experiments/cityscapes/${MODEL_YAML}* like below
+
+   ```yaml
+   ...
+   MODEL:
+     ...
+     PRETRAINED: "${MODEL_DIR}/${MODEL_NAME}.pth"
+     ALIGN_CORNERS: false
+     ...
+   TEST:
+     ...
+     MODEL_FILE: "${MODEL_DIR}/${MODEL_NAME}.pth"
+     ...
+   ```
 
 
-## VAL
+## Validation
 
-use the [official pretrained model](https://github.com/ydhongHIT/DDRNet) and our `eval.py` code. with [ydhongHIT's](https://github.com/ydhongHIT) advice now can reach the same accuracy in the paper. Thanks.
+* Execute the command below to evaluate the model on *Cityscapes-val*
 
-```python
-cd ${PROJECT}
+```
+cd ${REPO_ROOT}
 python tools/eval.py --cfg experiments/cityscapes/ddrnet23_slim.yaml
 ```
 
-| model | Train Set | Test Set | OHEM | Multi-scale| Flip | mIoU | Link |
-| :--: | :--: | :--: | :--: | :--: | :--: | :--: | :--: |
-| DDRNet23_slim | unknown | eval | Yes | No | No | 77.83 | [official](https://github.com/ydhongHIT/DDRNet) |
-| DDRNet23_slim | unknown | eval | Yes | No | Yes| 78.42 | [official](https://github.com/ydhongHIT/DDRNet) |
-| DDRNet23      | unknown | eval | Yes | No | No | 79.51 | [official](https://github.com/ydhongHIT/DDRNet) |
-| DDRNet23      | unknown | eval | Yes | No | Yes| 79.98 | [official](https://github.com/ydhongHIT/DDRNet) |
+| model | OHEM | Multi-scale| Flip | mIoU | FPS | E2E Latency (s) | Link |
+| :--: | :--: | :--: | :--: | :--: | :--: | ---- | ---- |
+| DDRNet23_slim | Yes | No | No | 77.83 | 91.31 | 0.062 | [official](https://github.com/ydhongHIT/DDRNet) |
+| DDRNet23_slim | Yes | No | Yes| 78.42 | TBD | TBD | [official](https://github.com/ydhongHIT/DDRNet) |
+| DDRNet23      | Yes | No | No | 79.51 | TBD | TBD | [official](https://github.com/ydhongHIT/DDRNet) |
+| DDRNet23      | Yes | No | Yes| 79.98 | TBD | TBD | [official](https://github.com/ydhongHIT/DDRNet) |
 
+**mIoU** denotes an mIoU on Cityscapes validation set.
+
+**FPS** is measured by following the test code provided by SwiftNet. Refer to `speed_test` from [lib/utils/utils.py](lib/utils/utils.py) for more details.
+
+**E2E Latency** denotes an end-to-end latency including pre/post-processing.
 
 **Note**
+
 - with the `ALIGN_CORNERS: false` in `***.yaml` will reach higher accuracy.
 
 
