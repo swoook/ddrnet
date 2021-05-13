@@ -64,13 +64,15 @@ def main():
     # build model
     if torch.__version__.startswith('1'):
         module = models.__dict__[config.MODEL.NAME]
-        module.BatchNorm2d_class = module.BatchNorm2d = torch.nn.BatchNorm2d
+        module.BatchNorm2d_class = module.BatchNorm2d = torch.nn.SyncBatchNorm
     model = models.__dict__[config.MODEL.NAME].__dict__['get_seg_model'](config)
 
     dump_input = torch.rand(
         (1, 3, config.TRAIN.IMAGE_SIZE[1], config.TRAIN.IMAGE_SIZE[0])
     )
     logger.info(get_model_summary(model.cuda(), dump_input.cuda()))
+
+    speed_test(model, size=(1024, 2048))
 
     if config.TEST.MODEL_FILE:
         model_state_file = config.TEST.MODEL_FILE
@@ -96,7 +98,7 @@ def main():
 
     # prepare data
     test_size = (config.TEST.IMAGE_SIZE[1], config.TEST.IMAGE_SIZE[0])
-    test_dataset = datasets.__dict__[config.DATASET.DATASET](
+    test_dataset = eval('datasets.'+config.DATASET.DATASET)(
                         root=config.DATASET.ROOT,
                         list_path=config.DATASET.TEST_SET,
                         num_samples=None,

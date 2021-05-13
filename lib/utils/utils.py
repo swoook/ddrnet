@@ -253,25 +253,25 @@ class Map16(object):
             os.path.join(dir, img_name))
 
 
-def speed_test(model, size=896, iteration=100):
-    input_t = torch.Tensor(1, 3, size, size).cuda()
+def speed_test(model, size=(896, 896), iteration=100):
+    input_t = torch.Tensor(1, 3, size[0], size[1]).cuda()
     feed_dict = {}
     feed_dict['img_data'] = input_t
 
     print("start warm up")
 
-    for i in range(10):
-        model(feed_dict, segSize=(size, size))
+    for i in range(iteration):
+        model(input_t)
 
     print("warm up done")
     start_ts = time.time()
     for i in range(iteration):
-        model(feed_dict, segSize=(size, size))
+        model(input_t)
 
     torch.cuda.synchronize()
     end_ts = time.time()
 
     t_cnt = end_ts - start_ts
     print("=======================================")
-    print("FPS: %f" % (100 / t_cnt))
-    print(f"Inference time {t_cnt/100*1000} ms")
+    print("FPS: %f" % (iteration / t_cnt))
+    print(f"Inference time {t_cnt/iteration*1000} ms")
