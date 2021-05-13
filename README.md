@@ -101,9 +101,11 @@ python tools/eval.py --cfg experiments/cityscapes/ddrnet23_slim.yaml
 
 **mIoU** denotes an mIoU on Cityscapes validation set.
 
-**FPS** is measured by following the test code provided by SwiftNet. Refer to `speed_test` from [lib/utils/utils.py](lib/utils/utils.py) for more details.
+**FPS** is measured by following the test code provided by SwiftNet. (Refer to `speed_test` from [lib/utils/utils.py](lib/utils/utils.py) for more details.)
 
 **E2E Latency** denotes an end-to-end latency including pre/post-processing.
+
+FPS and latency are measured with batch size **1** on **RTX 2080Ti GPU** and **Threadripper 2950X CPU**.
 
 **Note**
 
