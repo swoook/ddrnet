@@ -25,8 +25,12 @@ from utils.utils import Map16, Vedio
 
 import utils.distributed as dist
 
+classes = [
+    'road', 'sidewalk', 'building', 'wall', 'fence', 'pole', 'traffic light', 'traffic sign', 'vegetation',
+    'terrain', 'sky', 'person', 'rider', 'car', 'truck', 'bus', 'train', 'motorcycle', 'bicycle'
+]
 vedioCap = Vedio('./output/cdOffice.mp4')
-map16 = Map16(vedioCap)
+map16 = Map16(vedioCap, names=classes)
 
 def reduce_tensor(inp):
     """
@@ -161,6 +165,7 @@ def validate(config, testloader, model, writer_dict):
 
 def testval(config, test_dataset, testloader, model,
             sv_dir='', sv_pred=False):
+    time_avg = 0.0
     model.eval()
     confusion_matrix = np.zeros(
         (config.DATASET.NUM_CLASSES, config.DATASET.NUM_CLASSES))
@@ -168,13 +173,17 @@ def testval(config, test_dataset, testloader, model,
         for index, batch in enumerate(tqdm(testloader)):
             image, label, _, name, *border_padding = batch
             size = label.size()
+            torch.cuda.synchronize()
+            t0 = time.perf_counter()
             pred = test_dataset.multi_scale_inference(
                 config,
                 model,
                 image,
                 scales=config.TEST.SCALE_LIST,
                 flip=config.TEST.FLIP_TEST)
-
+            torch.cuda.synchronize()
+            t1 = time.perf_counter()
+            time_avg += t1 - t0
             if len(border_padding) > 0:
                 border_padding = border_padding[0]
                 pred = pred[:, :, 0:pred.size(2) - border_padding[0], 0:pred.size(3) - border_padding[1]]
@@ -184,7 +193,6 @@ def testval(config, test_dataset, testloader, model,
                     pred, size[-2:],
                     mode='bilinear', align_corners=config.MODEL.ALIGN_CORNERS
                 )
-            
             # # crf used for post-processing
             # postprocessor = DenseCRF(   )
             # # image
@@ -223,6 +231,8 @@ def testval(config, test_dataset, testloader, model,
                 mean_IoU = IoU_array.mean()
                 logging.info('mIoU: %.4f' % (mean_IoU))
 
+    time_avg /= len(test_dataset)
+    print('FPS: {}'.format((1/time_avg)))
     pos = confusion_matrix.sum(1)
     res = confusion_matrix.sum(0)
     tp = np.diag(confusion_matrix)
@@ -235,18 +245,25 @@ def testval(config, test_dataset, testloader, model,
 
 
 def test(config, test_dataset, testloader, model,
-         sv_dir='', sv_pred=True):
+         sv_dir='', sv_pred=False):
+    time_avg = 0.0
     model.eval()
     with torch.no_grad():
         for _, batch in enumerate(tqdm(testloader)):
             image, size, name = batch
             size = size[0]
+            
+            torch.cuda.synchronize()
+            t0 = time.perf_counter()
             pred = test_dataset.multi_scale_inference(
                 config,
                 model,
                 image,
                 scales=config.TEST.SCALE_LIST,
                 flip=config.TEST.FLIP_TEST)
+            torch.cuda.synchronize()
+            t1 = time.perf_counter()
+            time_avg += t1 - t0
 
             if pred.size()[-2] != size[0] or pred.size()[-1] != size[1]:
                 pred = F.interpolate(
@@ -272,3 +289,22 @@ def test(config, test_dataset, testloader, model,
                 #     os.mkdir(sv_path)
                 # test_dataset.save_pred(image, pred, sv_path, name)
         vedioCap.releaseCap()
+
+    time_avg /= len(test_dataset)
+    print('E2E Latency: {}'.format((time_avg)))
+
+def load_test_input(input_path):
+    image = cv2.imread(input_path, cv2.IMREAD_COLOR)
+    size = image.shape
+    mean=[0.485, 0.456, 0.406]
+    std=[0.229, 0.224, 0.225]
+    image = image.astype(np.float32)[:, :, ::-1]
+    image = image / 255.0
+    image -= self.mean
+    image /= self.std
+    image = image.transpose((2, 0, 1))
+    return image.copy(), np.array(size), os.path.basename(input_path)
+
+def infer(model, input_path, output_path):
+    input_data, input_size, input_name = load_test_input(input_path)
+    pass

@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from torch.nn import init
 from collections import OrderedDict
 
-BatchNorm2d = nn.BatchNorm2d
+BatchNorm2d = nn.SyncBatchNorm
 bn_mom = 0.1
 
 
@@ -14,6 +14,16 @@ def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=1, bias=False)
+
+
+class DebugLayer(nn.Module):
+    def __init__(self):
+        super(DebugLayer, self).__init__()
+    
+    def forward(self, x):
+        # Do your print / debug stuff here
+        print(x.shape)
+        return x
 
 
 class BasicBlock(nn.Module):
@@ -104,7 +114,8 @@ class DAPPM(nn.Module):
                                     nn.ReLU(inplace=True),
                                     nn.Conv2d(inplanes, branch_planes, kernel_size=1, bias=False),
                                     )
-        self.scale3 = nn.Sequential(nn.AvgPool2d(kernel_size=17, stride=8, padding=8),
+        self.scale3 = nn.Sequential(
+                                    nn.AvgPool2d(kernel_size=17, stride=8, padding=8),
                                     BatchNorm2d(inplanes, momentum=bn_mom),
                                     nn.ReLU(inplace=True),
                                     nn.Conv2d(inplanes, branch_planes, kernel_size=1, bias=False),

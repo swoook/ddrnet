@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+from tqdm import tqdm, trange
 
 import torch
 import torch.nn as nn
@@ -184,11 +185,13 @@ class Vedio(object):
 
 
 class Map16(object):
-    def __init__(self, vedioCap, visualpoint=True):
-        self.names = ("background", "floor", "bed", "cabinet,wardrobe,bookcase,shelf",
-                "person", "door", "table,desk,coffee", "chair,armchair,sofa,bench,swivel,stool",
-                "rug", "railing", "column", "refrigerator", "stairs,stairway,step", "escalator", "wall",
-                "dog", "plant")
+    def __init__(self, vedioCap, visualpoint=True, names=None):
+        self.names = names
+        if self.names is None:
+            self.self.names = ("background", "floor", "bed", "cabinet,wardrobe,bookcase,shelf",
+                    "person", "door", "table,desk,coffee", "chair,armchair,sofa,bench,swivel,stool",
+                    "rug", "railing", "column", "refrigerator", "stairs,stairway,step", "escalator", "wall",
+                    "dog", "plant")
         self.colors  = np.array([[0, 0, 0],
                     [0, 0, 255],
                     [0, 255, 0],
@@ -253,25 +256,20 @@ class Map16(object):
             os.path.join(dir, img_name))
 
 
-def speed_test(model, size=(896, 896), iteration=100):
-    input_t = torch.Tensor(1, 3, size[0], size[1]).cuda()
-    feed_dict = {}
-    feed_dict['img_data'] = input_t
-
+def speed_test(model, size=(896, 896), num_repet=100, is_cuda=True):
+    input_t = torch.Tensor(1, 3, size[0], size[1])
+    if is_cuda: input_t = input_t.cuda()
+    # print(next(model.parameters()).is_cuda)
     print("start warm up")
-
-    for i in range(iteration):
-        model(input_t)
-
+    for _ in range(30): model(input_t)
     print("warm up done")
-    start_ts = time.time()
-    for i in range(iteration):
-        model(input_t)
 
-    torch.cuda.synchronize()
-    end_ts = time.time()
-
-    t_cnt = end_ts - start_ts
-    print("=======================================")
-    print("FPS: %f" % (iteration / t_cnt))
-    print(f"Inference time {t_cnt/iteration*1000} ms")
+    if is_cuda: torch.cuda.synchronize()
+    t0 = time.perf_counter()
+    for _ in range(num_repet):
+        pred = model(input_t)[0]
+        pred = F.interpolate(input=pred, size=size, mode='bilinear', align_corners=False)
+    if is_cuda: torch.cuda.synchronize()
+    t1 = time.perf_counter()
+    inference_time = (t1 - t0) / num_repet
+    print('FPS: {}'.format((1/inference_time)))
