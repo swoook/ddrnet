@@ -269,6 +269,7 @@ def speed_test(model, size=(896, 896), num_repet=100, is_cuda=True):
     for _ in range(num_repet):
         pred = model(input_t)[0]
         pred = F.interpolate(input=pred, size=size, mode='bilinear', align_corners=False)
+        pred = torch.argmax(pred.exp(), dim=1)
     if is_cuda: torch.cuda.synchronize()
     t1 = time.perf_counter()
     inference_time = (t1 - t0) / num_repet
