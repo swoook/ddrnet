@@ -219,8 +219,8 @@ def testval(config, test_dataset, testloader, model,
             if sv_pred:
                 sv_path = os.path.join(sv_dir, 'test_results')
                 if not os.path.exists(sv_path):
-                    os.mkdir(sv_path)
-                test_dataset.save_pred2(image, pred, sv_path, name)
+                    os.makedirs(sv_path)
+                test_dataset.save_pred(pred, sv_path, name)
 
             if index % 100 == 0:
                 logging.info('processing: %d images' % index)

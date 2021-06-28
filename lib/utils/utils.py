@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+from torch._C import dtype
 from tqdm import tqdm, trange
 
 import torch
@@ -256,6 +257,55 @@ class Map16(object):
             os.path.join(dir, img_name))
 
 
+def letterbox_resize(src, dst_h, dst_w):
+    # https://stackoverflow.com/a/48450206
+    # https://github.com/qqwweee/keras-yolo3/issues/330#issue-401027524
+    """Resize with same aspect ratio as source image.
+
+    Args:
+        src: `np.array`, source image.
+        dst_h: `int`, height of target image.
+        dst_w: `int`, width of target image.
+
+    Returns:
+        `np.array`, target image with same aspect ratio as source image.
+    """
+    dst = np.zeros((dst_h, dst_w, 3), dtype=np.uint8)
+    src_h, src_w = src.shape[:2]
+    scale_factor = min(dst_h/src_h, dst_w/src_w)
+    inter_h, inter_w = int(src_h * scale_factor), int(src_w * scale_factor)
+    resized = cv2.resize(src, (inter_w, inter_h))
+    top_idx = (dst_h-inter_h)//2
+    left_idx = (dst_w-inter_w)//2
+    dst[top_idx:top_idx+inter_h, left_idx:left_idx+inter_w, :] = resized
+    return dst
+
+
+def letterbox_resize_tensor(src, dst_h, dst_w):
+    # https://stackoverflow.com/a/66539730
+    # It seems GPU is not helpful in this case
+    """Resize with same aspect ratio as source image.
+
+    Args:
+        src: `torch.tensor`, source image which has a size of (N, C, H, W).
+        dst_h: `int`, height of target image.
+        dst_w: `int`, width of target image.
+
+    Returns:
+        `torch.tensor`, target image with same aspect ratio as source image.
+    """
+    dst = torch.zeros((1, 3, dst_h, dst_w)).to(src.device)
+    src_h, src_w = src.size[2:]
+    scale_factor = min(dst_h/src_h, dst_w/src_w)
+    inter_h, inter_w = int(src_h * scale_factor), int(src_w * scale_factor)
+    resized = F.interpolate(src, (inter_w, inter_h), mode='bilinear', align_corners=False)
+    top_idx = (dst_h-inter_h)//2
+    left_idx = (dst_w-inter_w)//2
+    dst[:, :, top_idx:top_idx+inter_h, left_idx:left_idx+inter_w] = resized
+    return dst
+
+
+@torch.no_grad()
 def speed_test(model, size=(896, 896), num_repet=100, is_cuda=True):
     input_t = torch.Tensor(1, 3, size[0], size[1])
     if is_cuda: input_t = input_t.cuda()
@@ -274,3 +324,45 @@ def speed_test(model, size=(896, 896), num_repet=100, is_cuda=True):
     t1 = time.perf_counter()
     inference_time = (t1 - t0) / num_repet
     print('FPS: {}'.format((1/inference_time)))
+
+
+@torch.no_grad()
+def infer(model, input_path, output_path, input_size, device, config):
+    '''
+    1. Load an image
+    2. Scale
+    3. Normalize
+    4. Infer
+    5. Scale
+    '''
+
+    palette = np.random.randint(0, 256, (256, 3), dtype=np.uint8)
+
+    if not os.path.exists(input_path): raise FileNotFoundError
+    img = cv2.imread(input_path, cv2.IMREAD_COLOR)
+    img_shape = img.shape
+
+    # img = letterbox_resize(img, input_size[0], input_size[1])
+
+    mean=[0.485, 0.456, 0.406]
+    std=[0.229, 0.224, 0.225]
+    img = img.astype(np.float32)[:, :, ::-1]
+    img = img / 255.0
+    img -= mean
+    img /= std
+    img = img.transpose((2, 0, 1))
+    img = torch.Tensor(img).to(device).unsqueeze(0)
+
+    pred = model(img)
+
+    if config.MODEL.NUM_OUTPUTS > 1: pred = pred[config.TEST.OUTPUT_INDEX]
+    pred = torch.softmax(F.interpolate(
+        input=pred, size=img_shape[:2],
+        mode='bilinear', align_corners=config.MODEL.ALIGN_CORNERS
+    ), 1).exp().argmax(dim=1)
+    pred = pred.squeeze().detach().cpu().numpy()
+
+    pred = palette[pred]
+    cv2.imwrite(output_path, pred)
+
+    return pred

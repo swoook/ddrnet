@@ -191,6 +191,7 @@ class BaseDataset(data.Dataset):
         return encoded_labelmap
 
     def inference(self, config, model, image, flip=False):
+        image = image.cuda()
         size = image.size()
         pred = model(image)
 
