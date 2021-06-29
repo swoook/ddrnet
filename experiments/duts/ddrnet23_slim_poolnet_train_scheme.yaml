@@ -1,0 +1,56 @@
+GPUS: (0, 1)
+WORKERS: 4
+OUTPUT_DIR: '/data/swook/models/DUTS/'
+LOG_DIR: './log'
+PRINT_FREQ: 10
+CUDNN:
+  BENCHMARK: true
+  DETERMINISTIC: false
+  ENABLED: true
+MODEL:
+  NAME: 'ddrnet_23_slim'
+  NUM_OUTPUTS: 2
+  ALIGN_CORNERS: false
+  PRETRAINED: ''
+DATASET:
+  NAME: 'DUTS'
+  TRAIN_ROOT: '/data/swook/dataset/duts/DUTS-SOD100K/DUTS-TR'
+  TRAIN_LIST: '/data/swook/dataset/duts/DUTS-SOD100K/DUTS-TR/train_pair.lst'
+  TEST_ROOT: '/data/swook/dataset/duts/DUTS-SOD100K/DUTS-TE'
+  TEST_LIST: '/data/swook/dataset/duts/DUTS-SOD100K/DUTS-TE/test_pair.lst'
+  NUM_CLASSES: 1
+TRAIN:
+  IMAGE_SIZE:
+  - 1024
+  - 1024
+  BASE_SIZE: 2048
+  FLIP: true
+  MULTI_SCALE: true
+  DOWNSAMPLE_RATE: 1
+  IGNORE_LABEL: 255
+  SCALE_FACTOR: 16
+  BATCH_SIZE_PER_GPU: 1
+  SHUFFLE: true
+  PRINT_FREQ: 10
+  BEGIN_EPOCH: 0
+  END_EPOCH: 484
+  OPTIMIZER: sgd
+  LR: 0.01
+  WD: 0.0005
+  MOMENTUM: 0.9
+  NESTEROV: false
+  WEIGHTS_SAVE_FREQ: 10
+  WEIGHTS_SAVE_DIR: './results/' 
+  RESUME: false
+TEST:
+  IMAGE_SIZE:
+  - 2048
+  - 1024
+  BASE_SIZE: 2048
+  BATCH_SIZE_PER_GPU: 4
+  FLIP_TEST: false
+  MULTI_SCALE: false
+  SCALE_LIST: [1]
+  #0.5,0.75,1.0,1.25,1.5,1.75
+  MODEL_FILE: ''
+  OUTPUT_INDEX: 0
