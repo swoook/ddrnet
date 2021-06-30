@@ -1,6 +1,6 @@
-GPUS: (0, 1)
+GPUS: (0, 1, )
 WORKERS: 4
-OUTPUT_DIR: '/data/swook/models/DUTS/'
+OUTPUT_DIR: '/data/swook/models/ddrnet/'
 LOG_DIR: './log'
 PRINT_FREQ: 10
 CUDNN:
@@ -11,7 +11,7 @@ MODEL:
   NAME: 'ddrnet_23_slim'
   NUM_OUTPUTS: 2
   ALIGN_CORNERS: false
-  PRETRAINED: ''
+  PRETRAINED: '/data/swook/models/ddrnet/23_slim.pth'
 DATASET:
   NAME: 'DUTS'
   TRAIN_ROOT: '/data/swook/dataset/duts/DUTS-SOD100K/DUTS-TR'
@@ -39,6 +39,7 @@ TRAIN:
   WD: 0.0005
   MOMENTUM: 0.9
   NESTEROV: false
+  GRAD_ACCUMULATION_STEP_SIZE: 10
   WEIGHTS_SAVE_FREQ: 10
   WEIGHTS_SAVE_DIR: './results/' 
   RESUME: false
