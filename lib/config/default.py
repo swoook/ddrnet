@@ -135,6 +135,9 @@ def config_sod_ddrnet_23_slim():
 
     config.GPUS = list()
     config.WORKERS = 4
+    config.OUTPUT_DIR = None
+    config.LOG_DIR = None
+    config.PRINT_FREQ = None
 
     config.CUDNN = CfgNode()
     config.CUDNN.BENCHMARK = True
@@ -159,9 +162,9 @@ def config_sod_ddrnet_23_slim():
     config.DATASET = CfgNode()
     config.DATASET.NAME = None
     config.DATASET.TRAIN_ROOT = None
-    config.DATASET.TRAIN_SET = None
+    config.DATASET.TRAIN_LIST = None
     config.DATASET.TEST_ROOT = None
-    config.DATASET.TEST_SET = None
+    config.DATASET.TEST_LIST = None
     config.DATASET.NUM_CLASSES = None
 
 
@@ -174,9 +177,9 @@ def config_sod_ddrnet_23_slim():
     config.TRAIN.DOWNSAMPLE_RATE = 1
     config.TRAIN.SCALE_FACTOR = 16
 
-    config.TRAIN.FREEZE_LAYERS = ''
-    config.TRAIN.FREEZE_EPOCHS = -1
-    config.TRAIN.NONBACKBONE_KEYWORDS = []
+    # config.TRAIN.FREEZE_LAYERS = ''
+    # config.TRAIN.FREEZE_EPOCHS = -1
+    # config.TRAIN.NONBACKBONE_KEYWORDS = []
     config.TRAIN.NONBACKBONE_MULT = 10
 
     config.TRAIN.RANDOM_BRIGHTNESS = False
@@ -189,6 +192,7 @@ def config_sod_ddrnet_23_slim():
     config.TRAIN.MOMENTUM = None
     config.TRAIN.WD = None
     config.TRAIN.NESTEROV = False
+    config.TRAIN.GRAD_ACCUMULATION_STEP_SIZE = None
     config.TRAIN.IGNORE_LABEL = -1
 
     config.TRAIN.BATCH_SIZE_PER_GPU = None

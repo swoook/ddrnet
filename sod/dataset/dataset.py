@@ -8,33 +8,35 @@ import random
 from lib.utils.utils import letterbox_resize
 
 
-class DutsTr(data.Dataset):
+class DutsTrSet(data.Dataset):
+    ''' 
+    DUTS-TR
+    '''
     def __init__(self, root_dir, list_txt_path):
         self.root_dir = root_dir
-        self.list_txt_path = list_txt_path
+        self.path_img_gt_pairs = list_txt_path
 
-        with open(self.list_txt_path, 'r') as f:
-            self.data_list = [x.strip() for x in f.readlines()]
-
-        self.num_data = len(self.data_list)
+        with open(self.path_img_gt_pairs, 'r') as f:
+            self.img_gt_pairs = [x.strip() for x in f.readlines()]
+        # TODO: pre-process
+        self.num_data = len(self.img_gt_pairs)
 
 
     def __getitem__(self, item):
-        # sal data loading
-        im_name = self.data_list[item % self.num_data].split()[0]
-        gt_name = self.data_list[item % self.num_data].split()[1]
-        img = load_image(os.path.join(self.root_dir, im_name))
-        label = load_sal_label(os.path.join(self.root_dir, gt_name))
+        # TODO: Is `item % self.num_data` necessary?
+        img_path, label_path = self.img_gt_pairs[item % self.num_data].split()
+        img = load_train_img(os.path.join(self.root_dir, img_path))
+        label = load_label(os.path.join(self.root_dir, label_path))
 
         img, label = cv_random_flip(img, label)
         img = torch.Tensor(img)
         label = torch.Tensor(label)
 
-        sample = {'img': img, 'label': label}
-        return sample
+        return {'img': img, 'label': label}
 
     def __len__(self):
         return self.num_data
+
 
 class ImageDataTest(data.Dataset):
     def __init__(self, data_root, data_list):
@@ -46,7 +48,7 @@ class ImageDataTest(data.Dataset):
         self.image_num = len(self.image_list)
 
     def __getitem__(self, item):
-        image, im_size = load_image_test(os.path.join(self.data_root, self.image_list[item]))
+        image, im_size = load_img(os.path.join(self.data_root, self.image_list[item]))
         image = torch.Tensor(image)
 
         return {'image': image, 'name': self.image_list[item % self.image_num], 'size': im_size}
@@ -55,11 +57,11 @@ class ImageDataTest(data.Dataset):
         return self.image_num
 
 
-def get_loader(config, mode='train', pin=False):
+def get_dataloader(config, mode='train', pin=False):
     shuffle = False
     if mode == 'train':
         shuffle = True
-        dataset = DutsTr(config.DATASET.TRAIN_ROOT, config.DATASET.TRAIN_LIST)
+        dataset = DutsTrSet(config.DATASET.TRAIN_ROOT, config.DATASET.TRAIN_LIST)
         data_loader = data.DataLoader(dataset=dataset, batch_size=config.TRAIN.BATCH_SIZE_PER_GPU, 
         shuffle=shuffle, num_workers=config.WORKERS, pin_memory=pin)
     else:
@@ -69,7 +71,8 @@ def get_loader(config, mode='train', pin=False):
     return data_loader
 
 
-def load_image(path):
+def load_train_img(path):
+    # TODO: resize
     if not os.path.exists(path):
         print('File {} not exists'.format(path))
     im = cv2.imread(path)
@@ -79,7 +82,7 @@ def load_image(path):
     return in_
 
 
-def load_image_test(path):
+def load_img(path):
     if not os.path.exists(path):
         print('File {} not exists'.format(path))
     im = cv2.imread(path)
@@ -90,11 +93,12 @@ def load_image_test(path):
     return in_, im_size
 
 
-def load_sal_label(path):
+def load_label(path):
     if not os.path.exists(path):
         print('File {} not exists'.format(path))
     im = Image.open(path)
     label = np.array(im, dtype=np.float32)
+    # TODO: Load label image in  grayscale, not BGR format
     if len(label.shape) == 3:
         label = label[:,:,0]
     label = label / 255.

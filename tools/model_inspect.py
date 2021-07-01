@@ -36,12 +36,22 @@ from utils.utils import create_logger, FullModel, letterbox_resize
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--runmode', type=str, choices=['infer', 'fps'], default='infer', 
+    parser.add_argument('--runmode', type=str, 
+    choices=['infer', 'fps'], default='infer', 
     help='infer: infer from single image and write a result as a .jpg file \n fps: measure a FPS of given model')
-    parser.add_argument('--arch', type=str, choices=['resnet18', 'resnet50', 'vggnet16'], default='resnet', help='resnet or vgg')
-    parser.add_argument('--input_img_path', metavar='DIR', help='Input image path')
-    parser.add_argument('--model_path', metavar='DIR', required=True, help='.pth path to use in this demo')
-    parser.add_argument('--output_img_path', metavar='DIR', required=True, 
+    parser.add_argument('--cfg',
+                        help='experiment configure file name',
+                        default="experiments/cityscapes/ddrnet23_slim.yaml",
+                        type=str)
+    parser.add_argument('opts',
+                        help="Modify config options using the command-line",
+                        default=None,
+                        nargs=argparse.REMAINDER)
+    parser.add_argument('--arch', type=str, 
+    choices=['resnet18', 'resnet50', 'vggnet16'], 
+    default='resnet', help='resnet or vgg')
+    parser.add_argument('--input_img_path', metavar='PATH', help='Input image path')
+    parser.add_argument('--output_img_path', metavar='PATH', required=True, 
     help='Output image path, i.e. It visualizes an inference result')
     parser.add_argument('--cpu', dest='cuda', action='store_false')
     args = parser.parse_args()
@@ -73,11 +83,18 @@ class Inspector():
         # build model
         if torch.__version__.startswith('1'):
             module = models.__dict__[config.MODEL.NAME]
-            module.BatchNorm2d_class = module.BatchNorm2d = torch.nn.SyncBatchNorm    
-        model = models.__dict__[config.MODEL.NAME].__dict__['get_seg_model'](config).to(self.device)
+            module.BatchNorm2d_class = module.BatchNorm2d = torch.nn.SyncBatchNorm
+        '''
+        TODO: This doesn't load pre-trained weights from '.pth' file for Cityscapes appropriately
+        It seems it expects '.pth' file for ImageNet
+        Keys in the '.pth' file for Cityscapes are like 'model.conv1.0.weight'
+        Keys in the $model_dict are like 'conv1.0.weight'
+        That's why it states `if k[6:] in model_dict.keys()`
+        '''
+        model = module.__dict__['get_seg_model'](config, pretrained=False).to(self.device)
 
         # load pre-trained weights
-        pretrained_dict = torch.load(self.config.TEST.MODEL_FILE, map_location=self.device)
+        pretrained_dict = torch.load(self.config.MODEL.PRETRAINED, map_location=self.device)
         if 'state_dict' in pretrained_dict:
             pretrained_dict = pretrained_dict['state_dict']
         model_dict = model.state_dict()
@@ -99,11 +116,11 @@ class Inspector():
         5. Scale
         '''
 
-        if not os.path.exists(self.args.input_path): raise FileNotFoundError
-        img = cv2.imread(self.args.input_path, cv2.IMREAD_COLOR)
+        if not os.path.exists(self.args.input_img_path): raise FileNotFoundError
+        img = cv2.imread(self.args.input_img_path, cv2.IMREAD_COLOR)
         img_shape = img.shape
 
-        img = letterbox_resize(img, self.args.input_size[0], self.args.input_size[1])
+        # img = letterbox_resize(img, self.args.input_size, self.args.input_size)
 
         img = img.astype(np.float32)[:, :, ::-1]
         img = img / 255.0
@@ -122,16 +139,16 @@ class Inspector():
         pred = pred.squeeze().detach().cpu().numpy()
 
         pred = self.palette[pred]
-        cv2.imwrite(self.args.output_path, pred)
+        cv2.imwrite(self.args.output_img_path, pred)
 
         return pred
 
 
 def main(args):
     inspector = Inspector(config, args)
-    if config.runmode == 'infer':
-        inspector.infer(config.input_img_path, config.output_img_path)
-    elif config.runmode == 'fps': NotImplementedError
+    if args.runmode == 'infer':
+        inspector.infer()
+    elif args.runmode == 'fps': NotImplementedError
 
 
 if __name__ == "__main__":

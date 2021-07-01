@@ -3,7 +3,7 @@ from torch.nn import functional as F
 from torch.optim import Adam
 from torch.autograd import Variable
 from torch.backends import cudnn
-from sod.dataset.dataset import load_image_test
+from sod.dataset.dataset import load_img
 import numpy as np
 import os
 import cv2
@@ -37,11 +37,19 @@ class Solver(object):
 
     # build the network
     def build_model(self):
+        ''' TODO: Is this block necessary?
+        https://pytorch.org/docs/stable/backends.html#torch-backends-cudnn
+        '''
         if self.device.type == 'cuda':
             cudnn.benchmark = self.config.CUDNN.BENCHMARK
             cudnn.deterministic = self.config.CUDNN.DETERMINISTIC
             cudnn.enabled = self.config.CUDNN.ENABLED
-            torch.cuda.set_device(self.device)
+            ''' TODO: Is `torch.cuda.set_device` necessary?
+            https://pytorch.org/docs/stable/generated/torch.cuda.set_device.html#torch.cuda.set_device
+            > Usage of this function is discouraged in favor of device. 
+            > In most cases it’s better to use CUDA_VISIBLE_DEVICES environmental variable.
+            '''
+            # torch.cuda.set_device(self.device)
             torch.distributed.init_process_group(
                 backend="nccl", init_method="env://",)  
 
@@ -62,7 +70,7 @@ class Solver(object):
         pretrained_dict = {k[6:]: v for k, v in pretrained_dict.items()
                             if k[6:] in model_dict.keys()}
         model_dict.update(pretrained_dict)
-        self.net.load_state_dict(model_dict)
+        # self.net.load_state_dict(model_dict)
 
         if self.args.mode == 'train': 
             self.net.train()
@@ -74,7 +82,7 @@ class Solver(object):
 
 
     def infer(self, input_path, output_path):
-        input_data, _ = load_image_test(input_path)
+        input_data, _ = load_img(input_path)
         preds = self.net(input_data)
         pred = np.squeeze(torch.sigmoid(preds).cpu().data.numpy())
         multi_fuse = 255 * pred
