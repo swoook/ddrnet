@@ -59,8 +59,9 @@ class Solver(object):
             ''' TODO
             torch.nn.SyncBatchNorm requires calling `torch.distributed.init_process_group` while training
             '''
-            module.BatchNorm2d_class = module.BatchNorm2d = torch.nn.SyncBatchNorm    
-        self.net = module.__dict__['get_seg_model'](self.config, pretrained=False).to(self.device)
+            module.BatchNorm2d_class = module.BatchNorm2d = torch.nn.BatchNorm2d    
+        self.net = module.__dict__['get_seg_model'](self.config, 
+        pretrained=False, num_classes=1).to(self.device)
 
         # load pre-trained weights
         pretrained_dict = torch.load(self.config.MODEL.PRETRAINED, map_location=self.device)
@@ -121,6 +122,7 @@ class Solver(object):
                 sal_image, sal_label = sal_image.to(self.device), sal_label.to(self.device)
 
                 sal_pred = self.net(sal_image)
+
                 sal_loss_fuse = F.binary_cross_entropy_with_logits(sal_pred, sal_label, reduction='sum')
                 ''' TODO: Analyze the line below
                 It's fair enough to divide the losses by size of the mini-batch

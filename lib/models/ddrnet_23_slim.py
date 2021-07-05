@@ -352,8 +352,8 @@ class DualResNet(nn.Module):
         else:
             return x_      
 
-def DualResNet_imagenet(cfg, pretrained=False):
-    model = DualResNet(BasicBlock, [2, 2, 2, 2], num_classes=19, planes=32, spp_planes=128, head_planes=64, augment=True)
+def DualResNet_imagenet(cfg, pretrained=False, num_classes=19):
+    model = DualResNet(BasicBlock, [2, 2, 2, 2], num_classes=num_classes, planes=32, spp_planes=128, head_planes=64, augment=True)
     if pretrained:
         pretrained_state = torch.load(cfg.MODEL.PRETRAINED, map_location='cpu') 
         model_dict = model.state_dict()
@@ -365,7 +365,7 @@ def DualResNet_imagenet(cfg, pretrained=False):
 
 def get_seg_model(cfg, **kwargs):
 
-    model = DualResNet_imagenet(cfg, pretrained=True)
+    model = DualResNet_imagenet(cfg, pretrained=kwargs['pretrained'], num_classes=kwargs['num_classes'])
     return model
 
 
