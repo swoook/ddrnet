@@ -8,6 +8,7 @@ import numpy as np
 import os
 import cv2
 import time
+from collections import OrderedDict
 import lib.models
 
 
@@ -23,6 +24,8 @@ class Solver(object):
         self.grad_accumulation_step_size = self.config.TRAIN.GRAD_ACCUMULATION_STEP_SIZE
         self.print_freq = self.config.TRAIN.PRINT_FREQ
         self.lr_decay_epoch = [15,]
+        self.feature_extraction_keys = ['seghead_extra.conv2.weight', 'seghead_extra.conv2.bias',
+                                        'final_layer.conv2.weight', 'final_layer.conv2.bias']
         self.build_model()
         self.print_network(self.net, 'DDRNet')
 
@@ -65,13 +68,17 @@ class Solver(object):
 
         # load pre-trained weights
         pretrained_dict = torch.load(self.config.MODEL.PRETRAINED, map_location=self.device)
-        if 'state_dict' in pretrained_dict:
-            pretrained_dict = pretrained_dict['state_dict']
+        if 'state_dict' in pretrained_dict: pretrained_dict = pretrained_dict['state_dict']
+        # https://stackoverflow.com/a/50872567
+        # https://www.daleseo.com/python-collections-ordered-dict/#%EB%8F%99%EB%93%B1%EC%84%B1-%EB%B9%84%EA%B5%90
+        pretrained_dict = OrderedDict({k[6:]: v for k, v in pretrained_dict.items() if (k[:6] == 'model.')})
         model_dict = self.net.state_dict()
-        pretrained_dict = {k[6:]: v for k, v in pretrained_dict.items()
-                            if k[6:] in model_dict.keys()}
+        # https://github.com/pytorch/pytorch/issues/40859#issuecomment-857936621
+        pretrained_dict = OrderedDict({k: v if model_dict[k].size() == v.size() else model_dict[k]
+                                       for k, v in zip(model_dict.keys(), pretrained_dict.values())})
+        
         model_dict.update(pretrained_dict)
-        # self.net.load_state_dict(model_dict)
+        self.net.load_state_dict(model_dict)
 
         if self.args.mode == 'train': 
             self.net.train()
