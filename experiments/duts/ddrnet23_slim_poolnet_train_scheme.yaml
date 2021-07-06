@@ -14,8 +14,8 @@ MODEL:
   PRETRAINED: '/data/swook/models/ddrnet/23_slim.pth'
 DATASET:
   NAME: 'DUTS'
-  TRAIN_ROOT: '/data/swook/dataset/duts/DUTS-SOD100K/DUTS-TR'
-  TRAIN_LIST: '/data/swook/dataset/duts/DUTS-SOD100K/DUTS-TR/train_pair.lst'
+  TRAIN_ROOT: '/data/swook/dataset/duts/DUTS-PAD/DUTS-TR'
+  TRAIN_LIST: '/data/swook/dataset/duts/DUTS-PAD/DUTS-TR/train_pair.lst'
   TEST_ROOT: '/data/swook/dataset/duts/DUTS-SOD100K/DUTS-TE'
   TEST_LIST: '/data/swook/dataset/duts/DUTS-SOD100K/DUTS-TE/test_pair.lst'
   NUM_CLASSES: 1
@@ -29,7 +29,7 @@ TRAIN:
   DOWNSAMPLE_RATE: 1
   IGNORE_LABEL: 255
   SCALE_FACTOR: 16
-  BATCH_SIZE_PER_GPU: 1
+  BATCH_SIZE_PER_GPU: 2
   SHUFFLE: true
   PRINT_FREQ: 10
   BEGIN_EPOCH: 0

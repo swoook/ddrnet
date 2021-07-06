@@ -17,7 +17,7 @@ DATASET:
 MODEL:
   NAME: ddrnet_23_slim
   NUM_OUTPUTS: 2
-  PRETRAINED: "pretrained_models/DDRNet23s_imagenet.pth"
+  PRETRAINED: '/data/swook/models/ddrnet/23_slim.pth'
   ALIGN_CORNERS: false
 LOSS:
   USE_OHEM: true
