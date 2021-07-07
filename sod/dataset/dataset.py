@@ -61,14 +61,15 @@ def get_dataloader(config, mode='train', pin=False):
     shuffle = False
     if mode == 'train':
         shuffle = True
-        dataset = DutsTrSet(config.DATASET.TRAIN_ROOT, config.DATASET.TRAIN_LIST)
-        data_loader = data.DataLoader(dataset=dataset, batch_size=config.TRAIN.BATCH_SIZE_PER_GPU, 
+        trainset = DutsTrSet(config.DATASET.TRAIN_ROOT, config.DATASET.TRAIN_LIST)
+        train_loader = data.DataLoader(dataset=trainset, batch_size=config.TRAIN.BATCH_SIZE_PER_GPU, 
         shuffle=shuffle, num_workers=config.WORKERS, pin_memory=pin)
+        return train_loader
     else:
         dataset = ImageDataTest(config.DATASET.TEST_ROOT, config.DATASET.TEST_LIST)
         data_loader = data.DataLoader(dataset=dataset, batch_size=config.TEST.BATCH_SIZE_PER_GPU, 
         shuffle=shuffle, num_workers=config.WORKERS, pin_memory=pin)
-    return data_loader
+        return data_loader
 
 
 def load_train_img(path):

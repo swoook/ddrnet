@@ -1,4 +1,5 @@
 import torch
+from torch.jit import Error
 from torch.nn import functional as F
 from torch.optim import Adam
 from torch.autograd import Variable
@@ -10,6 +11,7 @@ import cv2
 import time
 from collections import OrderedDict
 import lib.models
+from tqdm import tqdm
 
 
 class Solver(object):
@@ -24,8 +26,10 @@ class Solver(object):
         self.grad_accumulation_step_size = self.config.TRAIN.GRAD_ACCUMULATION_STEP_SIZE
         self.print_freq = self.config.TRAIN.PRINT_FREQ
         self.lr_decay_epoch = [15,]
-        self.feature_extraction_keys = ['seghead_extra.conv2.weight', 'seghead_extra.conv2.bias',
-                                        'final_layer.conv2.weight', 'final_layer.conv2.bias']
+        # self.feature_extraction_keys = ['seghead_extra.conv2.weight', 'seghead_extra.conv2.bias',
+        #                                 'final_layer.conv2.weight', 'final_layer.conv2.bias']
+        self.feature_extraction_blocks = ['final_layer']
+        self.is_feature_extraction = False
         self.build_model()
         self.print_network(self.net, 'DDRNet')
 
@@ -37,6 +41,22 @@ class Solver(object):
         print(name)
         print(model)
         print("The number of parameters: {}".format(num_params))
+
+
+    def set_parameter_requires_grad(self):
+        if not self.is_feature_extraction:
+            for param in self.net.parameters():
+                param.requires_grad = True
+            return 0
+        for name, param in self.net.named_parameters():
+            block = name.split('.')[0]
+            if block in self.feature_extraction_blocks:
+                param.requires_grad = True
+            elif not block in self.feature_extraction_blocks:
+                param.requires_grad = False
+            else: raise Error
+        return 0
+
 
     # build the network
     def build_model(self):
@@ -66,22 +86,23 @@ class Solver(object):
         self.net = module.__dict__['get_seg_model'](self.config, 
         pretrained=False, num_classes=1).to(self.device)
 
-        # load pre-trained weights
-        pretrained_dict = torch.load(self.config.MODEL.PRETRAINED, map_location=self.device)
-        if 'state_dict' in pretrained_dict: pretrained_dict = pretrained_dict['state_dict']
-        # https://stackoverflow.com/a/50872567
-        # https://www.daleseo.com/python-collections-ordered-dict/#%EB%8F%99%EB%93%B1%EC%84%B1-%EB%B9%84%EA%B5%90
-        pretrained_dict = OrderedDict({k[6:]: v for k, v in pretrained_dict.items() if (k[:6] == 'model.')})
-        model_dict = self.net.state_dict()
-        # https://github.com/pytorch/pytorch/issues/40859#issuecomment-857936621
-        pretrained_dict = OrderedDict({k: v if model_dict[k].size() == v.size() else model_dict[k]
-                                       for k, v in zip(model_dict.keys(), pretrained_dict.values())})
+        # # load pre-trained weights
+        # pretrained_dict = torch.load(self.config.MODEL.PRETRAINED, map_location=self.device)
+        # if 'state_dict' in pretrained_dict: pretrained_dict = pretrained_dict['state_dict']
+        # # https://stackoverflow.com/a/50872567
+        # # https://www.daleseo.com/python-collections-ordered-dict/#%EB%8F%99%EB%93%B1%EC%84%B1-%EB%B9%84%EA%B5%90
+        # pretrained_dict = OrderedDict({k[6:]: v for k, v in pretrained_dict.items() if (k[:6] == 'model.')})
+        # model_dict = self.net.state_dict()
+        # # https://github.com/pytorch/pytorch/issues/40859#issuecomment-857936621
+        # pretrained_dict = OrderedDict({k: v if model_dict[k].size() == v.size() else model_dict[k]
+        #                                for k, v in zip(model_dict.keys(), pretrained_dict.values())})
         
-        model_dict.update(pretrained_dict)
-        self.net.load_state_dict(model_dict)
+        # model_dict.update(pretrained_dict)
+        # self.net.load_state_dict(model_dict)
 
         if self.args.mode == 'train': 
             self.net.train()
+            self.set_parameter_requires_grad()
             self.lr = self.config.TRAIN.LR
             self.wd = self.config.TRAIN.WD
             self.optimizer = Adam(filter(lambda p: p.requires_grad, self.net.parameters()), lr=self.lr, weight_decay=self.wd)
@@ -120,17 +141,26 @@ class Solver(object):
         for epoch in range(self.config.TRAIN.BEGIN_EPOCH, self.config.TRAIN.END_EPOCH):
             r_sal_loss= 0
             self.net.zero_grad()
-            for i, data_batch in enumerate(self.train_loader):
-                sal_image, sal_label = data_batch['img'], data_batch['label']
-                if (sal_image.size(2) != sal_label.size(2)) or (sal_image.size(3) != sal_label.size(3)):
+            for i, data_batch in enumerate(tqdm(self.train_loader)):
+                img, label = data_batch['img'], data_batch['label']
+                if img is None: continue
+                if (img.size(2) != label.size(2)) or (img.size(3) != label.size(3)):
                     print('IMAGE ERROR, PASSING```')
                     continue
-                sal_image, sal_label= Variable(sal_image), Variable(sal_label)
-                sal_image, sal_label = sal_image.to(self.device), sal_label.to(self.device)
+                img, label= Variable(img), Variable(label)
+                img, label = img.to(self.device), label.to(self.device)
 
-                sal_pred = self.net(sal_image)
+                ''' Currently, we don't use intermediate supervision
+                '''
+                pred = self.net(img)[0]
 
-                sal_loss_fuse = F.binary_cross_entropy_with_logits(sal_pred, sal_label, reduction='sum')
+                h_pred, w_pred = pred.size(2), pred.size(3)
+                h_label, w_label = label.size(2), label.size(3)
+                if (h_pred != h_label) or (w_pred != w_label):
+                    pred = F.interpolate(input=pred, size=(h_label, w_label), mode='bilinear', 
+                                         align_corners=self.config.MODEL.ALIGN_CORNERS)
+
+                sal_loss_fuse = F.binary_cross_entropy_with_logits(pred, label, reduction='mean')
                 ''' TODO: Analyze the line below
                 It's fair enough to divide the losses by size of the mini-batch
                 But what is $self.iter_size?
@@ -139,7 +169,7 @@ class Solver(object):
                 So, it divides the losses by not only batch size but also $self.iter_size
                 However, it seems the losses are averaged across observations for each minibatch if `reduction='mean'`
                 '''
-                sal_loss = sal_loss_fuse / (self.grad_accumulation_step_size * self.args.batch_size)
+                sal_loss = sal_loss_fuse / (self.grad_accumulation_step_size)
                 r_sal_loss += sal_loss.data
 
                 sal_loss.backward()
@@ -158,24 +188,31 @@ class Solver(object):
                     self.optimizer.zero_grad()
                     aveGrad = 0
 
-                if i % (self.print_freq // self.args.batch_size) == 0:
-                    if i == 0:
-                        x_showEvery = 1
-                    print('epoch: [%2d/%2d], iter: [%5d/%5d]  ||  Sal : %10.4f' % (
-                        epoch, self.args.epoch, i, iter_num, r_sal_loss/x_showEvery))
-                    print('Learning rate: ' + str(self.lr))
-                    r_sal_loss= 0
+                # if i % (self.print_freq // self.config.TRAIN.BATCH_SIZE_PER_GPU) == 0:
+                #     if i == 0:
+                #         x_showEvery = 1
+                #     print('epoch: [%2d/%2d], iter: [%5d/%5d]  ||  Sal : %10.4f' % (
+                #         epoch, self.config.TRAIN.END_EPOCH, i, iter_num, r_sal_loss/x_showEvery))
+                #     print('Learning rate: ' + str(self.lr))
+                #     r_sal_loss= 0
 
-            if (epoch + 1) % self.args.weights_save_cycle == 0:
+            print('epoch: [%2d/%2d] ||  Sal : %10.4f' % (
+                epoch, self.config.TRAIN.END_EPOCH, r_sal_loss))
+            print('Learning rate: ' + str(self.lr))
+            r_sal_loss= 0
+
+            if (epoch + 1) % self.config.TRAIN.WEIGHTS_SAVE_FREQ == 0:
                 pth_path = '{}/{}/{}_epoch_{}.pth'.format(
-                    self.args.weights_save_dir, self.configs.DATASET.NAME,
-                    self.configs.MODEL.NAME, epoch + 1)
+                    self.config.TRAIN.WEIGHTS_SAVE_DIR, self.config.DATASET.NAME,
+                    self.config.MODEL.NAME, epoch + 1)
                 pth_dir = os.path.dirname(pth_path)
-                if not os.path.exists(pth_dir): os.path.makedirs(pth_dir)
+                if not os.path.exists(pth_dir): os.makedirs(pth_dir)
                 torch.save(self.net.state_dict(), pth_path)
 
             if epoch in self.lr_decay_epoch:
                 self.lr = self.lr * 0.1
                 self.optimizer = Adam(filter(lambda p: p.requires_grad, self.net.parameters()), lr=self.lr, weight_decay=self.wd)
 
-        torch.save(self.net.state_dict(), '%s/models/final.pth' % self.args.save_folder)
+        torch.save(self.net.state_dict(), '{}/{}/{}_final.pth'.format(
+            self.config.TRAIN.WEIGHTS_SAVE_DIR, self.config.DATASET.NAME,
+            self.config.MODEL.NAME))
