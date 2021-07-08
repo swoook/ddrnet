@@ -167,9 +167,10 @@ def config_sod_ddrnet_23_slim():
     config.DATASET.TEST_LIST = None
     config.DATASET.NUM_CLASSES = None
 
+    config.LOSS = CfgNode()
+    config.LOSS.BALANCE_WEIGHTS = list()
 
     config.TRAIN = CfgNode()
-
     config.TRAIN.IMAGE_SIZE = list()  # [width, height]
     config.TRAIN.BASE_SIZE = None
     config.TRAIN.FLIP = True

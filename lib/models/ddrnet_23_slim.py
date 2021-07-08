@@ -171,16 +171,16 @@ class DAPPM(nn.Module):
         x_list.append(self.scale0(x))
         x_list.append(self.process1((F.interpolate(self.scale1(x),
                         size=[height, width],
-                        mode='bilinear')+x_list[0])))
+                        mode='bilinear', align_corners=False)+x_list[0])))
         x_list.append((self.process2((F.interpolate(self.scale2(x),
                         size=[height, width],
-                        mode='bilinear')+x_list[1]))))
+                        mode='bilinear', align_corners=False)+x_list[1]))))
         x_list.append(self.process3((F.interpolate(self.scale3(x),
                         size=[height, width],
-                        mode='bilinear')+x_list[2])))
+                        mode='bilinear', align_corners=False)+x_list[2])))
         x_list.append(self.process4((F.interpolate(self.scale4(x),
                         size=[height, width],
-                        mode='bilinear')+x_list[3])))
+                        mode='bilinear', align_corners=False)+x_list[3])))
        
         out = self.compression(torch.cat(x_list, 1)) + self.shortcut(x)
         return out 
@@ -207,7 +207,7 @@ class segmenthead(nn.Module):
             width = x.shape[-1] * self.scale_factor
             out = F.interpolate(out,
                         size=[height, width],
-                        mode='bilinear')
+                        mode='bilinear', align_corners=False)
 
         return out
 
@@ -324,7 +324,7 @@ class DualResNet(nn.Module):
         x_ = x_ + F.interpolate(
                         self.compression3(self.relu(layers[2])),
                         size=[height_output, width_output],
-                        mode='bilinear')
+                        mode='bilinear', align_corners=False)
         if self.augment:
             temp = x_
 
@@ -336,13 +336,13 @@ class DualResNet(nn.Module):
         x_ = x_ + F.interpolate(
                         self.compression4(self.relu(layers[3])),
                         size=[height_output, width_output],
-                        mode='bilinear')
+                        mode='bilinear', align_corners=False)
 
         x_ = self.layer5_(self.relu(x_))
         x = F.interpolate(
                         self.spp(self.layer5(self.relu(x))),
                         size=[height_output, width_output],
-                        mode='bilinear')
+                        mode='bilinear', align_corners=False)
 
         x_ = self.final_layer(x + x_)
 

@@ -12,6 +12,8 @@ import time
 from collections import OrderedDict
 import lib.models
 from tqdm import tqdm
+from sklearn.metrics import mean_absolute_error
+from sod.dataset.dataset import get_uniform_pad_size_tblr
 
 
 class Solver(object):
@@ -28,10 +30,11 @@ class Solver(object):
         self.lr_decay_epoch = [15,]
         # self.feature_extraction_keys = ['seghead_extra.conv2.weight', 'seghead_extra.conv2.bias',
         #                                 'final_layer.conv2.weight', 'final_layer.conv2.bias']
-        self.feature_extraction_blocks = ['final_layer']
+        # self.feature_extraction_blocks = ['final_layer']
         self.is_feature_extraction = False
+        self.maes_through_epochs = list()
         self.build_model()
-        self.print_network(self.net, 'DDRNet')
+        # self.print_network(self.net, 'DDRNet')
 
     # print the network information and parameter numbers
     def print_network(self, model, name):
@@ -43,18 +46,20 @@ class Solver(object):
         print("The number of parameters: {}".format(num_params))
 
 
-    def set_parameter_requires_grad(self):
-        if not self.is_feature_extraction:
-            for param in self.net.parameters():
-                param.requires_grad = True
-            return 0
-        for name, param in self.net.named_parameters():
-            block = name.split('.')[0]
-            if block in self.feature_extraction_blocks:
-                param.requires_grad = True
-            elif not block in self.feature_extraction_blocks:
-                param.requires_grad = False
-            else: raise Error
+    def set_parameter_requires_grad(self, is_train):
+        # if not self.is_feature_extraction:
+        #     for param in self.net.parameters():
+        #         param.requires_grad = True
+        #     return 0
+        # for name, param in self.net.named_parameters():
+        #     block = name.split('.')[0]
+        #     if block in self.feature_extraction_blocks:
+        #         param.requires_grad = True
+        #     elif not block in self.feature_extraction_blocks:
+        #         param.requires_grad = False
+        #     else: raise Error
+        for param in self.net.parameters():
+            param.requires_grad = is_train
         return 0
 
 
@@ -73,6 +78,7 @@ class Solver(object):
             > In most cases it’s better to use CUDA_VISIBLE_DEVICES environmental variable.
             '''
             # torch.cuda.set_device(self.device)
+
             torch.distributed.init_process_group(
                 backend="nccl", init_method="env://",)  
 
@@ -82,27 +88,29 @@ class Solver(object):
             ''' TODO
             torch.nn.SyncBatchNorm requires calling `torch.distributed.init_process_group` while training
             '''
-            module.BatchNorm2d_class = module.BatchNorm2d = torch.nn.BatchNorm2d    
+            module.BatchNorm2d_class = module.BatchNorm2d = torch.nn.SyncBatchNorm    
         self.net = module.__dict__['get_seg_model'](self.config, 
         pretrained=False, num_classes=1).to(self.device)
 
-        # # load pre-trained weights
-        # pretrained_dict = torch.load(self.config.MODEL.PRETRAINED, map_location=self.device)
-        # if 'state_dict' in pretrained_dict: pretrained_dict = pretrained_dict['state_dict']
-        # # https://stackoverflow.com/a/50872567
-        # # https://www.daleseo.com/python-collections-ordered-dict/#%EB%8F%99%EB%93%B1%EC%84%B1-%EB%B9%84%EA%B5%90
-        # pretrained_dict = OrderedDict({k[6:]: v for k, v in pretrained_dict.items() if (k[:6] == 'model.')})
-        # model_dict = self.net.state_dict()
-        # # https://github.com/pytorch/pytorch/issues/40859#issuecomment-857936621
-        # pretrained_dict = OrderedDict({k: v if model_dict[k].size() == v.size() else model_dict[k]
-        #                                for k, v in zip(model_dict.keys(), pretrained_dict.values())})
+        # load pre-trained weights
+        pretrained_dict = torch.load(self.config.MODEL.PRETRAINED, map_location=self.device)
+        if 'state_dict' in pretrained_dict: pretrained_dict = pretrained_dict['state_dict']
+        # https://stackoverflow.com/a/50872567
+        # https://www.daleseo.com/python-collections-ordered-dict/#%EB%8F%99%EB%93%B1%EC%84%B1-%EB%B9%84%EA%B5%90
+        pretrained_dict = OrderedDict({k[6:]: v for k, v in pretrained_dict.items() if (k[:6] == 'model.')})
+        model_dict = self.net.state_dict()
+        # https://github.com/pytorch/pytorch/issues/40859#issuecomment-857936621
+        pretrained_dict = OrderedDict({k: v if model_dict[k].size() == v.size() else model_dict[k]
+                                       for k, v in zip(model_dict.keys(), pretrained_dict.values())})
         
-        # model_dict.update(pretrained_dict)
-        # self.net.load_state_dict(model_dict)
+        model_dict.update(pretrained_dict)
+        self.net.load_state_dict(model_dict)
+
+        self.net = torch.nn.DataParallel(self.net, device_ids=self.config.GPUS).cuda()
 
         if self.args.mode == 'train': 
             self.net.train()
-            self.set_parameter_requires_grad()
+            self.set_parameter_requires_grad(is_train=True)
             self.lr = self.config.TRAIN.LR
             self.wd = self.config.TRAIN.WD
             self.optimizer = Adam(filter(lambda p: p.requires_grad, self.net.parameters()), lr=self.lr, weight_decay=self.wd)
@@ -118,31 +126,64 @@ class Solver(object):
         cv2.imwrite(output_path, multi_fuse)
 
 
-    def test(self):
-        mode_name = 'sal_fuse'
-        time_s = time.time()
-        img_num = len(self.test_loader)
-        for i, data_batch in enumerate(self.test_loader):
-            images, name, im_size = data_batch['image'], data_batch['name'][0], np.asarray(data_batch['size'])
+    def evaluate(self):
+        self.net.eval()
+        self.set_parameter_requires_grad(is_train=False)
+        if not os.path.exists(self.config.OUTPUT_DIR): os.makedirs(self.config.OUTPUT_DIR)
+        mae = 0.0
+        for i, minibatch in enumerate(tqdm(self.test_loader)):
+            img, label = minibatch['img'], np.squeeze(minibatch['label'].cpu().data.numpy())
+            name = minibatch['name']
+
             with torch.no_grad():
-                images = Variable(images).to(self.device)
-                preds = self.net(images)
-                pred = np.squeeze(torch.sigmoid(preds).cpu().data.numpy())
-                multi_fuse = 255 * pred
-                cv2.imwrite(os.path.join(self.args.test_fold, name[:-4] + '_' + mode_name + '.png'), multi_fuse)
-        time_e = time.time()
-        print('Speed: %f FPS' % (img_num/(time_e-time_s)))
-        print('Test Done!')
+                img = Variable(img).to(self.device)
+                pred = self.net(img)[0]
+
+                h_pred, w_pred = pred.size(2), pred.size(3)
+                h_img, w_img = img.size(2), img.size(3)
+                if (h_pred != h_img) or (w_pred != w_img):
+                    pred = F.interpolate(input=pred, size=(h_img, w_img), mode='bilinear', 
+                                         align_corners=self.config.MODEL.ALIGN_CORNERS)
+                                         
+                pred = np.squeeze(torch.sigmoid(pred).cpu().data.numpy())
+
+                pad_top, pad_bottom, pad_left, pad_right = get_uniform_pad_size_tblr(label, 
+                self.config.TEST.IMAGE_SIZE[0], 
+                self.config.TEST.IMAGE_SIZE[1])
+                pred = pred[pad_top:pred.shape[0]-pad_bottom, 
+                pad_left:pred.shape[1]-pad_right]
+                
+                mae += mean_absolute_error(label, pred)
+                # res = 255 * pred
+                # cv2.imwrite(os.path.join(self.config.OUTPUT_DIR, ''.join([name[0][:-4], '.png'])), res)
+        mae /= len(self.test_loader.dataset)
+        return mae
+
+
+    def get_mae(self, pred, label):
+        pred = torch.sigmoid(pred).cpu().data.numpy()
+        label = label.cpu().data.numpy()
+        mae = np.average(np.abs(pred - label))
+        return mae
 
 
     def train(self):
-        iter_num = len(self.train_loader.dataset) // self.config.TRAIN.BATCH_SIZE_PER_GPU
-        aveGrad = 0
+        eval_res_path = '{}/{}/{}_MAE.txt'.format(
+            self.config.TRAIN.WEIGHTS_SAVE_DIR, self.config.DATASET.NAME,
+            self.config.MODEL.NAME)
+        eval_res_dir = os.path.dirname(eval_res_path)
+        if not os.path.exists(eval_res_dir): os.makedirs(eval_res_dir)
+        eval_res_file = open(eval_res_path, 'w')
+
+        current_grad_acc_step = 0
+
         for epoch in range(self.config.TRAIN.BEGIN_EPOCH, self.config.TRAIN.END_EPOCH):
-            r_sal_loss= 0
+            loss_per_grad_acc= 0
+            train_mae = 0.0
             self.net.zero_grad()
-            for i, data_batch in enumerate(tqdm(self.train_loader)):
-                img, label = data_batch['img'], data_batch['label']
+            print('-------------------------------')
+            for i, minibatch in enumerate(tqdm(self.train_loader)):
+                img, label = minibatch['img'], minibatch['label']
                 if img is None: continue
                 if (img.size(2) != label.size(2)) or (img.size(3) != label.size(3)):
                     print('IMAGE ERROR, PASSING```')
@@ -150,17 +191,21 @@ class Solver(object):
                 img, label= Variable(img), Variable(label)
                 img, label = img.to(self.device), label.to(self.device)
 
-                ''' Currently, we don't use intermediate supervision
-                '''
-                pred = self.net(img)[0]
+                loss_minibatch = torch.zeros([1]).to(self.device)
+                preds = self.net(img)
+                for aux_loss_idx, (balance_weight, pred) in enumerate(zip(self.config.LOSS.BALANCE_WEIGHTS, preds)):
+                    h_pred, w_pred = pred.size(2), pred.size(3)
+                    h_label, w_label = label.size(2), label.size(3)
+                    if (h_pred != h_label) or (w_pred != w_label):
+                        pred = F.interpolate(input=pred, size=(h_label, w_label), mode='bilinear', 
+                                            align_corners=self.config.MODEL.ALIGN_CORNERS)
 
-                h_pred, w_pred = pred.size(2), pred.size(3)
-                h_label, w_label = label.size(2), label.size(3)
-                if (h_pred != h_label) or (w_pred != w_label):
-                    pred = F.interpolate(input=pred, size=(h_label, w_label), mode='bilinear', 
-                                         align_corners=self.config.MODEL.ALIGN_CORNERS)
+                    loss_minibatch += balance_weight * F.binary_cross_entropy_with_logits(
+                        pred, label, reduction='mean')
 
-                sal_loss_fuse = F.binary_cross_entropy_with_logits(pred, label, reduction='mean')
+                    if aux_loss_idx != 0: continue
+                    train_mae += self.get_mae(pred, label) * img.size(0)
+
                 ''' TODO: Analyze the line below
                 It's fair enough to divide the losses by size of the mini-batch
                 But what is $self.iter_size?
@@ -169,12 +214,12 @@ class Solver(object):
                 So, it divides the losses by not only batch size but also $self.iter_size
                 However, it seems the losses are averaged across observations for each minibatch if `reduction='mean'`
                 '''
-                sal_loss = sal_loss_fuse / (self.grad_accumulation_step_size)
-                r_sal_loss += sal_loss.data
+                loss_minibatch_unit_grad_acc = loss_minibatch / (self.grad_accumulation_step_size)
+                loss_per_grad_acc += loss_minibatch_unit_grad_acc.data
 
-                sal_loss.backward()
+                loss_minibatch_unit_grad_acc.backward()
 
-                aveGrad += 1
+                current_grad_acc_step += 1
 
                 # accumulate gradients as done in DSS
                 '''
@@ -183,10 +228,10 @@ class Solver(object):
                 Find gradient accumulation for more details
                 https://makinarocks.github.io/Gradient-Accumulation/
                 '''
-                if aveGrad % self.grad_accumulation_step_size == 0:
+                if current_grad_acc_step % self.grad_accumulation_step_size == 0:
                     self.optimizer.step()
                     self.optimizer.zero_grad()
-                    aveGrad = 0
+                    current_grad_acc_step = 0
 
                 # if i % (self.print_freq // self.config.TRAIN.BATCH_SIZE_PER_GPU) == 0:
                 #     if i == 0:
@@ -196,10 +241,19 @@ class Solver(object):
                 #     print('Learning rate: ' + str(self.lr))
                 #     r_sal_loss= 0
 
-            print('epoch: [%2d/%2d] ||  Sal : %10.4f' % (
-                epoch, self.config.TRAIN.END_EPOCH, r_sal_loss))
+
+            train_mae /= len(self.train_loader.dataset)
+            test_mae = self.evaluate()
+            print('epoch: [%2d/%2d]' % (
+                epoch, self.config.TRAIN.END_EPOCH))
             print('Learning rate: ' + str(self.lr))
-            r_sal_loss= 0
+            loss_per_grad_acc= 0
+            print('{:>16} {:>16} {:>16}'.format('', 'DUTS-TR', 'DUTS-TE'))
+            print('{:>16} {:>16.3f} {:>16.3f}'.format('MAE', train_mae, test_mae))
+            print('\n')
+            eval_res_file.write('{} {}\n'.format(train_mae, test_mae))
+            self.net.train()
+            self.set_parameter_requires_grad(is_train=True)
 
             if (epoch + 1) % self.config.TRAIN.WEIGHTS_SAVE_FREQ == 0:
                 pth_path = '{}/{}/{}_epoch_{}.pth'.format(
@@ -216,3 +270,5 @@ class Solver(object):
         torch.save(self.net.state_dict(), '{}/{}/{}_final.pth'.format(
             self.config.TRAIN.WEIGHTS_SAVE_DIR, self.config.DATASET.NAME,
             self.config.MODEL.NAME))
+
+        eval_res_file.close()

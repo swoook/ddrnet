@@ -95,14 +95,13 @@ def main(args):
     config = get_config(args.cfg_path)
     if args.mode == 'train':
         train_loader = get_dataloader(config)
-        solver = Solver(train_loader, None, config, args)
+        test_loader = get_dataloader(config, mode='test')
+        solver = Solver(train_loader, test_loader, config, args)
         solver.train()
     elif args.mode == 'test':
-        args.test_root, args.test_list = get_test_info(args.sal_mode)
         test_loader = get_dataloader(config, mode='test')
-        if not os.path.exists(args.test_fold): os.mkdir(args.test_fold)
         solver = Solver(None, test_loader, config, args)
-        solver.test()
+        solver.evaluate()
 
 
 if __name__ == '__main__':
