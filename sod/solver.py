@@ -106,7 +106,7 @@ class Solver(object):
         model_dict.update(pretrained_dict)
         self.net.load_state_dict(model_dict)
 
-        self.net = torch.nn.DataParallel(self.net, device_ids=self.config.GPUS).cuda()
+        # self.net = torch.nn.DataParallel(self.net, device_ids=self.config.GPUS).cuda()
 
         if self.args.mode == 'train': 
             self.net.train()
@@ -175,7 +175,7 @@ class Solver(object):
         if not os.path.exists(eval_res_dir): os.makedirs(eval_res_dir)
         eval_res_file = open(eval_res_path, 'w')
 
-        current_grad_acc_step = 0
+        # current_grad_acc_step = 0
 
         for epoch in range(self.config.TRAIN.BEGIN_EPOCH, self.config.TRAIN.END_EPOCH):
             loss_per_grad_acc= 0
@@ -219,7 +219,7 @@ class Solver(object):
 
                 loss_minibatch_unit_grad_acc.backward()
 
-                current_grad_acc_step += 1
+                # current_grad_acc_step += 1
 
                 # accumulate gradients as done in DSS
                 '''
@@ -228,10 +228,13 @@ class Solver(object):
                 Find gradient accumulation for more details
                 https://makinarocks.github.io/Gradient-Accumulation/
                 '''
-                if current_grad_acc_step % self.grad_accumulation_step_size == 0:
-                    self.optimizer.step()
-                    self.optimizer.zero_grad()
-                    current_grad_acc_step = 0
+                # if current_grad_acc_step % self.grad_accumulation_step_size == 0:
+                #     self.optimizer.step()
+                #     self.optimizer.zero_grad()
+                #     current_grad_acc_step = 0
+
+                self.optimizer.step()
+                self.optimizer.zero_grad()
 
                 # if i % (self.print_freq // self.config.TRAIN.BATCH_SIZE_PER_GPU) == 0:
                 #     if i == 0:
