@@ -26,7 +26,6 @@ class Solver(object):
         self.iter_size = config.iter_size
         self.show_every = config.show_every
         self.lr_decay_epoch = [15,]
-        self.aux_loss_weights = [1, 0.4]
         self.build_model()
         if config.mode == 'test':
             print('Loading pre-trained model from %s...' % self.config.model)
@@ -124,7 +123,6 @@ class Solver(object):
             train_mae = 0.0
             self.net.zero_grad()
             for i, data_batch in enumerate(tqdm(self.train_loader)):
-                sal_loss_fuse = 0
                 sal_image, sal_label = data_batch['sal_image'], data_batch['sal_label']
                 if (sal_image.size(2) != sal_label.size(2)) or (sal_image.size(3) != sal_label.size(3)):
                     # print('IMAGE ERROR, PASSING```')
@@ -134,18 +132,9 @@ class Solver(object):
                     # cudnn.benchmark = True
                     sal_image, sal_label = sal_image.cuda(), sal_label.cuda()
 
-                sal_pred = self.net(sal_image)
-                for aux_loss_idx, (balance_weight, pred) in enumerate(zip(self.aux_loss_weights, sal_pred)):
-                    sal_loss_fuse += balance_weight * F.binary_cross_entropy_with_logits(
-                        sal_pred, sal_label, reduction='sum')
-                    if aux_loss_idx != 0: continue
-                    train_mae += self.get_mae(sal_pred, sal_label) * sal_image.size(0)
-
-
-                # sal_pred = self.net(sal_image)[0]
-                # train_mae += self.get_mae(sal_pred, sal_label) * sal_image.size(0)
-                # sal_loss_fuse = F.binary_cross_entropy_with_logits(sal_pred, sal_label, reduction='sum')
-                
+                sal_pred = self.net(sal_image)[0]
+                train_mae += self.get_mae(sal_pred, sal_label) * sal_image.size(0)
+                sal_loss_fuse = F.binary_cross_entropy_with_logits(sal_pred, sal_label, reduction='sum')
                 sal_loss = sal_loss_fuse / (self.iter_size * self.config.batch_size)
                 r_sal_loss += sal_loss.data
 
