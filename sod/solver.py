@@ -23,17 +23,16 @@ class Solver(object):
         self.train_loader = train_loader
         self.test_loader = test_loader
         self.config = config
+        self.device = torch.device('cuda' if self.config.cuda else 'cpu')
         self.iter_size = config.iter_size
         self.show_every = config.show_every
         self.lr_decay_epoch = [15,]
         self.build_model()
-        if config.mode == 'test':
-            print('Loading pre-trained model from %s...' % self.config.model)
-            if self.config.cuda:
-                self.net.load_state_dict(torch.load(self.config.model), strict=False)
-            else:
-                self.net.load_state_dict(torch.load(self.config.model, map_location='cpu'), strict=False)
-            self.net.eval()
+        if self.config.mode == 'test':
+            trained_params = torch.load(self.config.model, map_location=self.device)
+            self.net.load_state_dict(trained_params)
+        self.net.eval()
+
 
     # print the network information and parameter numbers
     def print_network(self, model, name):
@@ -44,16 +43,13 @@ class Solver(object):
         print(model)
         print("The number of parameters: {}".format(num_params))
 
+
     # build the network
     def build_model(self):
-        self.net = get_seg_model(self.config, pretrained=True, num_classes=1)
-        if self.config.cuda:
-            self.net = self.net.cuda()
-        self.net.eval()  # use_global_stats = True
-
+        is_train = True if self.config.mode == 'train' else False
+        self.net = get_seg_model(self.config, pretrained=is_train, num_classes=1).to(self.device)
         self.lr = self.config.lr
         self.wd = self.config.wd
-
         self.optimizer = Adam(filter(lambda p: p.requires_grad, self.net.parameters()), lr=self.lr, weight_decay=self.wd)
         # self.print_network(self.net, 'PoolNet Structure')
 
@@ -75,11 +71,10 @@ class Solver(object):
         return 0
 
 
-    def test(self):
-        # self.net.eval()
+    def test(self, save_path=None):
         self.set_parameter_requires_grad(is_train=False)
-        img_num = len(self.test_loader)
         mae = 0.0
+
         for i, data_batch in enumerate(tqdm(self.test_loader)):
             images, name= data_batch['image'], data_batch['name'][0]
             label = data_batch['label']
@@ -92,13 +87,18 @@ class Solver(object):
                 images = Variable(images)
                 if self.config.cuda:
                     images = images.cuda()
-                preds = self.net(images)[0]
-                pred = np.squeeze(torch.sigmoid(preds).cpu().data.numpy())
+                preds = self.net(images)
+                pred = preds[0] if len(preds) > 1 else preds
+                pred = np.squeeze(torch.sigmoid(pred).cpu().data.numpy())
                 mae += mean_absolute_error(label, pred)
 
-                #multi_fuse = 255 * pred
-                #cv2.imwrite(os.path.join(self.config.test_fold, name[:-4] + '_' + mode_name + '.png'), multi_fuse)
+                if save_path is None: continue
+                pred = 255 * pred
+                img_path = os.path.join(save_path, ''.join([name[:-4], '.png']))
+                cv2.imwrite(img_path, pred)
+
         mae /= len(self.test_loader.dataset)
+        # print('MAE: {}'.format(mae))
         return mae
 
 
@@ -111,6 +111,7 @@ class Solver(object):
 
     # training phase
     def train(self):
+        self.set_parameter_requires_grad(is_train=True)
         eval_res_path = '{}/models/MAE.txt'.format(self.config.save_folder)
         eval_res_dir = os.path.dirname(eval_res_path)
         if not os.path.exists(eval_res_dir): os.makedirs(eval_res_dir)

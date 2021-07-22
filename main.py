@@ -42,11 +42,10 @@ def main(config):
         train = Solver(train_loader, test_loader, config)
         train.train()
     elif config.mode == 'test':
-        config.test_root, config.test_list = get_test_info(config.sal_mode)
         test_loader = get_loader(config, mode='test')
-        if not os.path.exists(config.test_fold): os.mkdir(config.test_fold)
+        if not os.path.exists(config.test_res_dir): os.makedirs(config.test_res_dir)
         test = Solver(None, test_loader, config)
-        test.test()
+        test.test(config.test_res_dir)
     else:
         raise IOError("illegal input!!!")
 
@@ -63,7 +62,7 @@ if __name__ == '__main__':
 
     # Training settings
     parser.add_argument('--pretrained_model', type=str, default=res2net_path)
-    parser.add_argument('--epoch', type=int, default=24)
+    parser.add_argument('--epoch', type=int, default=48)
     parser.add_argument('--batch_size', type=int, default=1) # only support 1 now
     parser.add_argument('--num_thread', type=int, default=1)
     parser.add_argument('--load', type=str, default='')
@@ -78,7 +77,8 @@ if __name__ == '__main__':
 
     # Testing settings
     parser.add_argument('--model', type=str, default=None) # Snapshot
-    parser.add_argument('--test_fold', type=str, default=None) # Test results saving folder
+    parser.add_argument('--test_res_dir', type=str, metavar='DIR',
+    help='directory to save test results as image files', default=None) # Test results saving folder
     parser.add_argument('--sal_mode', type=str, default='e') # Test image dataset
     parser.add_argument('--test_root', type=str, default='')
     parser.add_argument('--test_list', type=str, default='')
