@@ -61,7 +61,7 @@ if __name__ == '__main__':
     parser.add_argument('--no-cuda', dest='cuda', action='store_false')
 
     # Training settings
-    parser.add_argument('--pretrained_model', type=str, default=res2net_path)
+    parser.add_argument('--pretrained_path', type=str, metavar='PATH', default=None)
     parser.add_argument('--epoch', type=int, default=48)
     parser.add_argument('--batch_size', type=int, default=1) # only support 1 now
     parser.add_argument('--num_thread', type=int, default=1)

@@ -357,20 +357,177 @@ class DualResNet(nn.Module):
         else:
             return x_      
 
-def DualResNet_imagenet(cfg, pretrained=False, num_classes=19):
-    model = DualResNet(BasicBlock, [2, 2, 2, 2], num_classes=num_classes, planes=32, spp_planes=128, head_planes=64, augment=True)
-    if pretrained:
-        pretrained_state = torch.load(cfg.pretrained_model, map_location='cpu') 
-        model_dict = model.state_dict()
-        pretrained_state = {k: v for k, v in pretrained_state.items() if (k in model_dict and v.shape == model_dict[k].shape)}
-        model_dict.update(pretrained_state)
+
+class DualResNetInference(nn.Module):
+
+    def __init__(self, block, layers, num_classes=19, planes=64, spp_planes=128, head_planes=128, augment=True):
+        super(DualResNetInference, self).__init__()
+
+        highres_planes = planes * 2
+        self.augment = augment
+
+        self.conv1 =  nn.Sequential(
+                          nn.Conv2d(3,planes,kernel_size=3, stride=2, padding=1),
+                          BatchNorm2d(planes, momentum=bn_mom),
+                          nn.ReLU(inplace=True),
+                          nn.Conv2d(planes,planes,kernel_size=3, stride=2, padding=1),
+                          BatchNorm2d(planes, momentum=bn_mom),
+                          nn.ReLU(inplace=True),
+                      )
+
+        self.relu = nn.ReLU(inplace=False)
+        self.layer1 = self._make_layer(block, planes, planes, layers[0])
+        self.layer2 = self._make_layer(block, planes, planes * 2, layers[1], stride=2)
+        self.layer3 = self._make_layer(block, planes * 2, planes * 4, layers[2], stride=2)
+        self.layer4 = self._make_layer(block, planes * 4, planes * 8, layers[3], stride=2)
+
+        self.compression3 = nn.Sequential(
+                                          nn.Conv2d(planes * 4, highres_planes, kernel_size=1, bias=False),
+                                          BatchNorm2d(highres_planes, momentum=bn_mom),
+                                          )
+
+        self.compression4 = nn.Sequential(
+                                          nn.Conv2d(planes * 8, highres_planes, kernel_size=1, bias=False),
+                                          BatchNorm2d(highres_planes, momentum=bn_mom),
+                                          )
+
+        self.down3 = nn.Sequential(
+                                   nn.Conv2d(highres_planes, planes * 4, kernel_size=3, stride=2, padding=1, bias=False),
+                                   BatchNorm2d(planes * 4, momentum=bn_mom),
+                                   )
+
+        self.down4 = nn.Sequential(
+                                   nn.Conv2d(highres_planes, planes * 4, kernel_size=3, stride=2, padding=1, bias=False),
+                                   BatchNorm2d(planes * 4, momentum=bn_mom),
+                                   nn.ReLU(inplace=True),
+                                   nn.Conv2d(planes * 4, planes * 8, kernel_size=3, stride=2, padding=1, bias=False),
+                                   BatchNorm2d(planes * 8, momentum=bn_mom),
+                                   )
+
+        self.layer3_ = self._make_layer(block, planes * 2, highres_planes, 2)
+
+        self.layer4_ = self._make_layer(block, highres_planes, highres_planes, 2)
+
+        self.layer5_ = self._make_layer(Bottleneck, highres_planes, highres_planes, 1)
+
+        self.layer5 =  self._make_layer(Bottleneck, planes * 8, planes * 8, 1, stride=2)
+
+        self.spp = DAPPM(planes * 16, spp_planes, planes * 4)
+
+        if self.augment:
+            self.seghead_extra = segmenthead(highres_planes, head_planes, num_classes)            
+
+        self.final_layer = segmenthead(planes * 4, head_planes, num_classes)
+
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+
+    def _make_layer(self, block, inplanes, planes, blocks, stride=1):
+        downsample = None
+        if stride != 1 or inplanes != planes * block.expansion:
+            downsample = nn.Sequential(
+                nn.Conv2d(inplanes, planes * block.expansion,
+                          kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(planes * block.expansion, momentum=bn_mom),
+            )
+
+        layers = []
+        layers.append(block(inplanes, planes, stride, downsample))
+        inplanes = planes * block.expansion
+        for i in range(1, blocks):
+            if i == (blocks-1):
+                layers.append(block(inplanes, planes, stride=1, no_relu=True))
+            else:
+                layers.append(block(inplanes, planes, stride=1, no_relu=False))
+
+        return nn.Sequential(*layers)
+
+
+    def forward(self, x):
+        width_input = x.shape[-1]
+        height_input = x.shape[-2]
+
+        layers = []
+
+        x = self.conv1(x)
+
+        x = self.layer1(x)
+        layers.append(x)
+
+        x = self.layer2(self.relu(x))
+        layers.append(x)
+  
+        x = self.layer3(self.relu(x))
+        layers.append(x)
+        x_ = self.layer3_(self.relu(layers[1]))
+
+        width_hidden = x_.shape[-1]
+        height_hidden = x_.shape[-2]
         
-        model.load_state_dict(model_dict, strict = False)
+        x = x + self.down3(self.relu(x_))
+        x_ = x_ + F.interpolate(
+                        self.compression3(self.relu(layers[2])),
+                        size=[height_hidden, width_hidden],
+                        mode='bilinear', align_corners=False)
+
+        x = self.layer4(self.relu(x))
+        layers.append(x)
+        x_ = self.layer4_(self.relu(x_))
+
+        x = x + self.down4(self.relu(x_))
+        x_ = x_ + F.interpolate(
+                        self.compression4(self.relu(layers[3])),
+                        size=[height_hidden, width_hidden],
+                        mode='bilinear', align_corners=False)
+
+        x_ = self.layer5_(self.relu(x_))
+        x = F.interpolate(
+                        self.spp(self.layer5(self.relu(x))),
+                        size=[height_hidden, width_hidden],
+                        mode='bilinear', align_corners=False)
+
+        x_ = self.final_layer(x + x_)
+        x_ = F.interpolate(x_, [height_input, width_input], mode='bilinear', align_corners=False)
+
+        return x_      
+
+
+def DualResNet_imagenet(cfg, is_train=False, pretrained=False, num_classes=19,):
+    if is_train is True:
+        model = DualResNet(
+            BasicBlock, 
+            [2, 2, 2, 2], 
+            num_classes=num_classes, 
+            planes=32, 
+            spp_planes=128, 
+            head_planes=64, 
+            augment=True)
+
+    elif is_train is False:
+        model = DualResNetInference(
+            BasicBlock, 
+            [2, 2, 2, 2], 
+            num_classes=num_classes, 
+            planes=32, 
+            spp_planes=128, 
+            head_planes=64, 
+            augment=True)
+
     return model
 
-def get_seg_model(cfg, **kwargs):
 
-    model = DualResNet_imagenet(cfg, pretrained=kwargs['pretrained'], num_classes=kwargs['num_classes'])
+def get_seg_model(cfg, **kwargs):
+    model = DualResNet_imagenet(
+                                cfg, 
+                                is_train=kwargs['is_train'],
+                                num_classes=kwargs['num_classes'], 
+                                )
     return model
 
 

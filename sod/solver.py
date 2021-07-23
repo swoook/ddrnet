@@ -22,36 +22,44 @@ class Solver(object):
     def __init__(self, train_loader, test_loader, config):
         self.train_loader = train_loader
         self.test_loader = test_loader
+
         self.config = config
+
         self.device = torch.device('cuda' if self.config.cuda else 'cpu')
-        self.iter_size = config.iter_size
-        self.show_every = config.show_every
-        self.lr_decay_epoch = [15,]
+
         self.build_model()
-        if self.config.mode == 'test':
-            trained_params = torch.load(self.config.model, map_location=self.device)
-            self.net.load_state_dict(trained_params)
+
+        pretrained_state = torch.load(self.config.pretrained_path, map_location=self.device)
+        net_dict = self.net.state_dict()
+        pretrained_state = {
+            k: v for k, v in pretrained_state.items() 
+            if ((k in net_dict) and (v.shape == net_dict[k].shape))}
+        net_dict.update(pretrained_state)
+
+        if self.config.mode == 'train': 
+            self.net.load_state_dict(net_dict, strict = False)
+            self.set_parameter_requires_grad(is_train=True)
+            self.iter_size = config.iter_size
+            self.show_every = config.show_every
+            self.lr_decay_epoch = [15,]
+            self.lr = self.config.lr
+            self.wd = self.config.wd
+            self.optimizer = Adam(filter(lambda p: p.requires_grad, self.net.parameters()), lr=self.lr, weight_decay=self.wd)
+
+        elif self.config.mode == 'test': 
+            self.net.load_state_dict(net_dict, strict=True)
+            self.set_parameter_requires_grad(is_train=False)
+
         self.net.eval()
-
-
-    # print the network information and parameter numbers
-    def print_network(self, model, name):
-        num_params = 0
-        for p in model.parameters():
-            num_params += p.numel()
-        print(name)
-        print(model)
-        print("The number of parameters: {}".format(num_params))
 
 
     # build the network
     def build_model(self):
         is_train = True if self.config.mode == 'train' else False
-        self.net = get_seg_model(self.config, pretrained=is_train, num_classes=1).to(self.device)
-        self.lr = self.config.lr
-        self.wd = self.config.wd
-        self.optimizer = Adam(filter(lambda p: p.requires_grad, self.net.parameters()), lr=self.lr, weight_decay=self.wd)
-        # self.print_network(self.net, 'PoolNet Structure')
+        self.net = get_seg_model(
+            self.config, 
+            is_train=is_train, 
+            num_classes=1).to(self.device)
 
 
     def set_parameter_requires_grad(self, is_train):
@@ -75,7 +83,7 @@ class Solver(object):
         self.set_parameter_requires_grad(is_train=False)
         mae = 0.0
 
-        for i, data_batch in enumerate(tqdm(self.test_loader)):
+        for _, data_batch in enumerate(tqdm(self.test_loader)):
             images, name= data_batch['image'], data_batch['name'][0]
             label = data_batch['label']
 
@@ -92,13 +100,13 @@ class Solver(object):
                 pred = np.squeeze(torch.sigmoid(pred).cpu().data.numpy())
                 mae += mean_absolute_error(label, pred)
 
-                if save_path is None: continue
-                pred = 255 * pred
-                img_path = os.path.join(save_path, ''.join([name[:-4], '.png']))
-                cv2.imwrite(img_path, pred)
+                # if save_path is None: continue
+                # pred = 255 * pred
+                # img_path = os.path.join(save_path, ''.join([name[:-4], '.png']))
+                # cv2.imwrite(img_path, pred)
 
         mae /= len(self.test_loader.dataset)
-        # print('MAE: {}'.format(mae))
+        print('MAE: {}'.format(mae))
         return mae
 
 
@@ -111,7 +119,6 @@ class Solver(object):
 
     # training phase
     def train(self):
-        self.set_parameter_requires_grad(is_train=True)
         eval_res_path = '{}/models/MAE.txt'.format(self.config.save_folder)
         eval_res_dir = os.path.dirname(eval_res_path)
         if not os.path.exists(eval_res_dir): os.makedirs(eval_res_dir)
@@ -176,21 +183,4 @@ class Solver(object):
                 self.optimizer = Adam(filter(lambda p: p.requires_grad, self.net.parameters()), lr=self.lr, weight_decay=self.wd)
 
         torch.save(self.net.state_dict(), '%s/models/final.pth' % self.config.save_folder)
-
-def bce2d(input, target, reduction=None):
-    assert(input.size() == target.size())
-    pos = torch.eq(target, 1).float()
-    neg = torch.eq(target, 0).float()
-
-    num_pos = torch.sum(pos)
-    num_neg = torch.sum(neg)
-    num_total = num_pos + num_neg
-
-    alpha = num_neg  / num_total
-    beta = 1.1 * num_pos  / num_total
-    # target pixel = 1 -> weight beta
-    # target pixel = 0 -> weight 1-beta
-    weights = alpha * pos + beta * neg
-
-    return F.binary_cross_entropy_with_logits(input, target, weights, reduction=reduction)
 
