@@ -487,6 +487,12 @@ class DualResNetInference(nn.Module):
                         mode='bilinear', align_corners=False)
 
         x_ = self.layer5_(self.relu(x_))
+        '''
+        $self.layer5 is `RBB 1/64` from the figure 4 in the arXiv:2101.06085
+        Assume an input feature map has a size of (H, W)
+        Then, $self.layer5 outputs the feature-map with size of (H/64, W/64)
+        We'd like to change it to (H/32, W/32)
+        '''
         x = F.interpolate(
                         self.spp(self.layer5(self.relu(x))),
                         size=[height_hidden, width_hidden],
