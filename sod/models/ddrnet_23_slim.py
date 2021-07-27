@@ -262,7 +262,7 @@ class DualResNet(nn.Module):
 
         self.layer5_ = self._make_layer(Bottleneck, highres_planes, highres_planes, 1)
 
-        self.layer5 =  self._make_layer(Bottleneck, planes * 8, planes * 8, 1, stride=2)
+        self.layer5 =  self._make_layer(Bottleneck, planes * 8, planes * 8, 1, stride=1)
 
         self.spp = DAPPM(planes * 16, spp_planes, planes * 4)
 
@@ -410,7 +410,7 @@ class DualResNetInference(nn.Module):
 
         self.layer5_ = self._make_layer(Bottleneck, highres_planes, highres_planes, 1)
 
-        self.layer5 =  self._make_layer(Bottleneck, planes * 8, planes * 8, 1, stride=2)
+        self.layer5 =  self._make_layer(Bottleneck, planes * 8, planes * 8, 1, stride=1)
 
         self.spp = DAPPM(planes * 16, spp_planes, planes * 4)
 
