@@ -222,7 +222,7 @@ class DualResNet(nn.Module):
                           nn.Conv2d(3,planes,kernel_size=3, stride=2, padding=1),
                           BatchNorm2d(planes, momentum=bn_mom),
                           nn.ReLU(inplace=True),
-                          nn.Conv2d(planes,planes,kernel_size=3, stride=2, padding=1),
+                          nn.Conv2d(planes,planes,kernel_size=3, stride=1, padding=1),
                           BatchNorm2d(planes, momentum=bn_mom),
                           nn.ReLU(inplace=True),
                       )
@@ -262,7 +262,7 @@ class DualResNet(nn.Module):
 
         self.layer5_ = self._make_layer(Bottleneck, highres_planes, highres_planes, 1)
 
-        self.layer5 =  self._make_layer(Bottleneck, planes * 8, planes * 8, 1, stride=1)
+        self.layer5 =  self._make_layer(Bottleneck, planes * 8, planes * 8, 1, stride=2)
 
         self.spp = DAPPM(planes * 16, spp_planes, planes * 4)
 
@@ -370,7 +370,7 @@ class DualResNetInference(nn.Module):
                           nn.Conv2d(3,planes,kernel_size=3, stride=2, padding=1),
                           BatchNorm2d(planes, momentum=bn_mom),
                           nn.ReLU(inplace=True),
-                          nn.Conv2d(planes,planes,kernel_size=3, stride=2, padding=1),
+                          nn.Conv2d(planes,planes,kernel_size=3, stride=1, padding=1),
                           BatchNorm2d(planes, momentum=bn_mom),
                           nn.ReLU(inplace=True),
                       )
@@ -410,7 +410,7 @@ class DualResNetInference(nn.Module):
 
         self.layer5_ = self._make_layer(Bottleneck, highres_planes, highres_planes, 1)
 
-        self.layer5 =  self._make_layer(Bottleneck, planes * 8, planes * 8, 1, stride=1)
+        self.layer5 =  self._make_layer(Bottleneck, planes * 8, planes * 8, 1, stride=2)
 
         self.spp = DAPPM(planes * 16, spp_planes, planes * 4)
 
