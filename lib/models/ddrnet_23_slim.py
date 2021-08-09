@@ -364,8 +364,16 @@ def DualResNet_imagenet(cfg, pretrained=False, num_classes=19):
     return model
 
 def get_seg_model(cfg, **kwargs):
-
-    model = DualResNet_imagenet(cfg, pretrained=kwargs['pretrained'], num_classes=kwargs['num_classes'])
+    if (not 'pretrained' in kwargs) and (not 'num_classes' in kwargs): 
+        model = DualResNet_imagenet(cfg)
+    elif not 'pretrained' in kwargs:
+        model = DualResNet_imagenet(cfg, num_classes=kwargs['num_classes'])
+    elif not 'num_classes' in kwargs:
+        model = DualResNet_imagenet(cfg, pretrained=kwargs['pretrained'])
+    elif ('pretrained' in kwargs) and ('num_classes' in kwargs): 
+        model = DualResNet_imagenet(cfg, pretrained=kwargs['pretrained'], num_classes=kwargs['num_classes'])
+    else:
+        raise NotImplementedError
     return model
 
 

@@ -74,12 +74,6 @@ class Inspector():
         
 
     def load_net(self,):
-        # cudnn related setting
-        if self.args.cuda:
-            cudnn.benchmark = config.CUDNN.BENCHMARK
-            cudnn.deterministic = config.CUDNN.DETERMINISTIC
-            cudnn.enabled = config.CUDNN.ENABLED
-
         # build model
         if torch.__version__.startswith('1'):
             module = models.__dict__[config.MODEL.NAME]

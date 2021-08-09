@@ -30,6 +30,11 @@ from core.function import testval, test
 from utils.modelsummary import get_model_summary
 from utils.utils import create_logger, FullModel, speed_test
 
+import sys
+print(sys.path)
+sys.path.append('.')
+from lib.models.ddrnet_23_slim import get_seg_model
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Train segmentation network')
     parser.add_argument('--runmode',
@@ -45,8 +50,9 @@ def parse_args():
                         default=None,
                         nargs=argparse.REMAINDER)
     parser.add_argument('--input_size',
-                        default='512',
-                        help='Assume the input is a square',
+                        nargs='+',
+                        default='512 512',
+                        help='idx:0 is a height, and idx:1 is a width',
                         type=int)
     parser.add_argument('--cpu', dest='cuda', action='store_false')
     args = parser.parse_args()
@@ -63,26 +69,14 @@ def main():
 
     device = torch.device('cuda' if args.cuda else 'cpu')
 
-    # cudnn related setting
-    if args.cuda:
-        cudnn.benchmark = config.CUDNN.BENCHMARK
-        cudnn.deterministic = config.CUDNN.DETERMINISTIC
-        cudnn.enabled = config.CUDNN.ENABLED
-
-    # build model
-    if torch.__version__.startswith('1'):
-        module = models.__dict__[config.MODEL.NAME]
-        module.BatchNorm2d_class = module.BatchNorm2d = torch.nn.SyncBatchNorm    
-
-    model = models.__dict__[config.MODEL.NAME].__dict__['get_seg_model'](config).to(device)
+    model = get_seg_model(config, pretrained=False, num_classes=19).to(device)
     width, height = config.TRAIN.IMAGE_SIZE[1], config.TRAIN.IMAGE_SIZE[0]
     dump_input = torch.rand((1, 3, width, height)).to(device)
     logger.info(get_model_summary(model, dump_input))
 
     if args.runmode == 'fps': 
-        speed_test(model, size=(args.input_size, args.input_size), num_repet=1000, is_cuda=args.cuda)
+        speed_test(model, size=args.input_size, num_repet=1000, is_cuda=args.cuda)
     elif args.runmode == 'infer': 
-        
         pass
     # if config.TEST.MODEL_FILE:
     #     model_state_file = config.TEST.MODEL_FILE
