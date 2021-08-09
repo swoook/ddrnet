@@ -7,6 +7,7 @@
 import argparse
 from genericpath import isfile
 import os
+import time
 
 import numpy as np
 import cv2
@@ -106,12 +107,30 @@ class Inspector():
                 output_path = os.path.join(self.args.output_imgs_dir, input_name)
                 self.infer_single_img(input_path, output_path)
 
+    def measure_fps(self):
+        num_repet = 100
+        input_t = torch.Tensor(1, 3, 512, 512).to(self.device)
+        # print(next(model.parameters()).is_cuda)
+        print("start warm up")
+        for _ in range(30): self.net(input_t)
+        print("warm up done")
+
+        if self.args.cuda: torch.cuda.synchronize()
+        t0 = time.perf_counter()
+        for _ in range(num_repet):
+            self.net(input_t)
+        if self.args.cuda: torch.cuda.synchronize()
+        t1 = time.perf_counter()
+        inference_time = (t1 - t0) / num_repet
+        print('FPS: {}'.format((1/inference_time)))
+
 
 def main(args):
     inspector = Inspector(args)
     if args.runmode == 'infer':
         inspector.infer()
-    elif args.runmode == 'fps': NotImplementedError
+    elif args.runmode == 'fps':
+        inspector.measure_fps()
 
 
 if __name__ == "__main__":
